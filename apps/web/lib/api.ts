@@ -1,6 +1,10 @@
-import type { TicketDetail, TicketSummary } from '@billing-resolution/types';
+import type {
+  InvestigationView,
+  TicketDetail,
+  TicketSummary,
+} from '@billing-resolution/types';
 
-const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:4000/api';
+export const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:4000/api';
 
 export class ApiError extends Error {
   constructor(
@@ -31,4 +35,17 @@ export async function fetchTicket(id: string): Promise<TicketDetail | null> {
     throw new ApiError(`Ticket request failed (${res.status})`, res.status);
   }
   return (await res.json()) as TicketDetail;
+}
+
+export async function fetchLatestInvestigation(
+  ticketId: string,
+): Promise<InvestigationView | null> {
+  const res = await fetch(
+    `${API_BASE_URL}/tickets/${encodeURIComponent(ticketId)}/investigation`,
+    { cache: 'no-store' },
+  );
+  if (!res.ok) {
+    throw new ApiError(`Investigation request failed (${res.status})`, res.status);
+  }
+  return (await res.json()) as InvestigationView | null;
 }

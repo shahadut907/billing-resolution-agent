@@ -44,3 +44,30 @@ export const INVOICE_STATUS_LABELS: Record<string, string> = {
   PAID: 'Paid',
   VOID: 'Void',
 };
+
+export const RISK_LABELS: Record<string, string> = {
+  LOW: 'Low',
+  MEDIUM: 'Medium',
+  HIGH: 'High',
+  URGENT: 'Urgent — escalate',
+};
+
+export const UNCERTAINTY_LABELS: Record<string, string> = {
+  CONFIRMED: 'Confirmed by records',
+  LIKELY: 'Likely',
+  UNCERTAIN: 'Uncertain',
+  UNRESOLVABLE: 'Unresolvable from records',
+};
+
+export const NEXT_STEP_LABELS: Record<string, string> = {
+  PLATFORM_OPS_REACTIVATION: 'Platform Ops reactivation review',
+  DUPLICATE_INVOICE_VERIFICATION: 'Duplicate invoice verification',
+  SECURITY_ESCALATION: 'Security escalation',
+  FINANCIAL_REVIEW: 'Financial review',
+  CHARGE_VERIFICATION: 'Charge verification',
+};
+
+export const INVESTIGATION_STATUS_LABELS: Record<string, string> = {
+  COMPLETED: 'Completed',
+  FAILED: 'Failed',
+};

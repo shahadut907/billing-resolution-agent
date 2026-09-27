@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { Badge } from '../../../components/badge';
+import { InvestigationPanel } from '../../../components/investigation-panel';
 import { RecordTable } from '../../../components/record-table';
-import { fetchTicket } from '../../../lib/api';
+import { fetchLatestInvestigation, fetchTicket } from '../../../lib/api';
 import { formatDateTime, formatDate, formatMoney } from '../../../lib/format';
 import {
   ACCOUNT_STATUS_LABELS,
@@ -35,6 +36,12 @@ export default async function TicketDetailPage({ params }: PageProps) {
     detail = await fetchTicket(id);
   } catch {
     apiError = true;
+  }
+  let investigation = null;
+  try {
+    investigation = await fetchLatestInvestigation(id);
+  } catch {
+    investigation = null;
   }
 
   if (apiError) {
@@ -188,9 +195,11 @@ export default async function TicketDetailPage({ params }: PageProps) {
       </div>
 
       <p className="muted footnote">
-        Milestone 1: this console is read-only. Records come from the idempotent seed and
-        nothing on this page takes actions.
+        Milestone 2: records and investigations are read-only. Nothing on this page takes
+        actions — investigations are advisory drafts for human review.
       </p>
+
+      <InvestigationPanel ticketId={id} initial={investigation} />
     </>
   );
 }

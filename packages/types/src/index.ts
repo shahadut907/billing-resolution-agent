@@ -98,3 +98,89 @@ export interface HealthResponse {
   status: string;
   database: boolean;
 }
+
+/**
+ * Milestone 2: bounded, read-only AI investigation contract. Investigations
+ * are advisory drafts for human review — nothing is executed, refunded, or sent.
+ */
+
+export const UNCERTAINTY_LEVELS = [
+  'CONFIRMED',
+  'LIKELY',
+  'UNCERTAIN',
+  'UNRESOLVABLE',
+] as const;
+export type UncertaintyLevel = (typeof UNCERTAINTY_LEVELS)[number];
+
+export const RISK_CATEGORIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export type RiskCategory = (typeof RISK_CATEGORIES)[number];
+
+export const NEXT_STEP_TYPES = [
+  'PLATFORM_OPS_REACTIVATION',
+  'DUPLICATE_INVOICE_VERIFICATION',
+  'SECURITY_ESCALATION',
+  'FINANCIAL_REVIEW',
+  'CHARGE_VERIFICATION',
+] as const;
+export type NextStepType = (typeof NEXT_STEP_TYPES)[number];
+
+export const EVIDENCE_RECORD_TYPES = [
+  'TICKET',
+  'ACCOUNT',
+  'SUBSCRIPTION',
+  'PAYMENT',
+  'INVOICE',
+  'POLICY',
+] as const;
+export type EvidenceRecordType = (typeof EVIDENCE_RECORD_TYPES)[number];
+
+export type InvestigationStatus = 'COMPLETED' | 'FAILED';
+
+export interface EvidenceCitation {
+  recordType: EvidenceRecordType;
+  id: string;
+  note?: string;
+}
+
+/** Redacted tool trace entry: no record payloads, only ids and counts. */
+export interface ToolTraceEntry {
+  seq: number;
+  tool: string;
+  argKeys: string[];
+  status: 'ok' | 'rejected';
+  reason?: string;
+  rowCount?: number;
+  recordIds?: string[];
+  durationMs?: number;
+}
+
+export interface InvestigationBoundsView {
+  timeBudgetMs: number;
+  maxToolCalls: number;
+  toolCallsUsed: number;
+  elapsedMs: number;
+  providerRetries: number;
+  outputRetries: number;
+  turns: number;
+}
+
+export interface InvestigationView {
+  id: string;
+  ticketId: string;
+  status: InvestigationStatus;
+  provider: string;
+  model: string;
+  isMock: boolean;
+  diagnosis: string | null;
+  uncertainty: UncertaintyLevel | null;
+  riskCategory: RiskCategory | null;
+  proposedNextStep: { type: NextStepType; detail: string } | null;
+  draftReply: string | null;
+  supportingEvidence: EvidenceCitation[];
+  contradictingEvidence: EvidenceCitation[];
+  toolTrace: ToolTraceEntry[];
+  bounds: InvestigationBoundsView;
+  policyOverrides: string[];
+  failureReason: string | null;
+  createdAt: string;
+}

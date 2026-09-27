@@ -61,6 +61,33 @@ enum TicketPriority {
   URGENT
 }
 
+enum InvestigationStatus {
+  COMPLETED
+  FAILED
+}
+
+enum UncertaintyLevel {
+  CONFIRMED
+  LIKELY
+  UNCERTAIN
+  UNRESOLVABLE
+}
+
+enum RiskCategory {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NextStepType {
+  PLATFORM_OPS_REACTIVATION
+  DUPLICATE_INVOICE_VERIFICATION
+  SECURITY_ESCALATION
+  FINANCIAL_REVIEW
+  CHARGE_VERIFICATION
+}
+
 model Company {
   id        String    @id @default(cuid())
   slug      String    @unique
@@ -156,6 +183,7 @@ model Ticket {
   relatedAccount   Account?       @relation("RelatedTickets", fields: [relatedAccountId], references: [id])
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+  investigations   Investigation[]
 
   @@index([accountId])
   @@index([relatedAccountId])
@@ -174,4 +202,31 @@ model Policy {
   createdAt     DateTime @default(now())
 
   @@index([companyId])
+}
+
+// Milestone 2: persisted AI investigations. Advisory output for human review —
+// no approvals, account mutations, refunds, or notifications are implemented.
+model Investigation {
+  id                     String              @id @default(cuid())
+  ticketId               String
+  ticket                 Ticket              @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  status                 InvestigationStatus
+  provider               String
+  model                  String
+  isMock                 Boolean
+  diagnosis              String?
+  uncertainty            UncertaintyLevel?
+  riskCategory           RiskCategory?
+  proposedNextStepType   NextStepType?
+  proposedNextStepDetail String?
+  draftReply             String?
+  supportingEvidence     Json?
+  contradictingEvidence  Json?
+  toolTrace              Json
+  bounds                 Json
+  policyOverrides        String[]
+  failureReason          String?
+  createdAt              DateTime            @default(now())
+
+  @@index([ticketId])
 }
