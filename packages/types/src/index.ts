@@ -184,3 +184,129 @@ export interface InvestigationView {
   failureReason: string | null;
   createdAt: string;
 }
+
+/**
+ * Milestone 3: human approval and action workflow. A proposal is the ONLY
+ * path from an investigation to a permitted synthetic change, and only an
+ * authenticated reviewer decision can move it forward.
+ */
+
+export const ACTION_TYPES = ['ENTITLEMENT_REPAIR', 'DUPLICATE_INVOICE_CORRECTION'] as const;
+export type ActionType = (typeof ACTION_TYPES)[number];
+
+export const PROPOSAL_STATUSES = ['PROPOSED', 'APPLIED', 'REJECTED', 'ESCALATED'] as const;
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
+
+export const PROPOSAL_DECISIONS = ['APPROVED', 'REJECTED', 'ESCALATED'] as const;
+export type ProposalDecision = (typeof PROPOSAL_DECISIONS)[number];
+
+export const PROPOSAL_AUDIT_EVENTS = [
+  'PROPOSAL_CREATED',
+  'DECISION_RECORDED',
+  'APPROVAL_REJECTED',
+  'APPLY_SUCCEEDED',
+  'APPLY_FAILED',
+] as const;
+export type ProposalAuditEvent = (typeof PROPOSAL_AUDIT_EVENTS)[number];
+
+export const DECISION_ACTIONS = ['APPROVE', 'REJECT', 'ESCALATE'] as const;
+export type DecisionAction = (typeof DECISION_ACTIONS)[number];
+
+/** Immutable action target. Every id belongs to the ticket's reporter account. */
+export interface ProposalPayload {
+  accountId: string;
+  actionType: ActionType;
+  subscriptionId?: string;
+  paymentId?: string;
+  invoiceId?: string;
+  canonicalInvoiceId?: string;
+  duplicateInvoiceId?: string;
+}
+
+/** `${recordType}:${id}` -> ISO updatedAt captured when the proposal was written. */
+export type RecordVersionMap = Record<string, string>;
+
+export interface ProposalView {
+  id: string;
+  ticketId: string;
+  investigationId: string;
+  actionType: ActionType;
+  status: ProposalStatus;
+  payload: ProposalPayload;
+  evidence: EvidenceCitation[];
+  recordVersions: RecordVersionMap;
+  policyId: string;
+  policyKey: string;
+  policyVersion: string;
+  rationale: string;
+  expiresAt: string;
+  decision: ProposalDecision | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  appliedAt: string | null;
+  applyError: string | null;
+  failureCount: number;
+  createdAt: string;
+}
+
+export interface ProposalAuditView {
+  id: string;
+  proposalId: string;
+  event: ProposalAuditEvent;
+  actor: string | null;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface ProposalWithAuditsView {
+  proposal: ProposalView;
+  audits: ProposalAuditView[];
+}
+
+export interface ProposalDecisionRequest {
+  decision: DecisionAction;
+  reviewer: string;
+  passcode: string;
+}
+
+export interface ProposalDecisionResult {
+  proposal: ProposalView;
+  ticket: { id: string; reference: string; status: TicketStatus };
+  audits: ProposalAuditView[];
+}
+
+export interface TicketEscalationView {
+  id: string;
+  ticketId: string;
+  escalatedBy: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/** Server capabilities the UI needs to render honest controls. */
+export interface MetaView {
+  reviewerAuthConfigured: boolean;
+  publicReadOnly: boolean;
+}
+
+export type ProposalErrorCode =
+  | 'no_completed_investigation'
+  | 'escalation_only'
+  | 'not_eligible'
+  | 'proposal_exists'
+  | 'not_found'
+  | 'already_decided'
+  | 'expired'
+  | 'policy_changed'
+  | 'record_changed'
+  | 'account_mismatch'
+  | 'invalid_passcode'
+  | 'reviewer_auth_not_configured'
+  | 'invalid_request'
+  | 'ticket_not_found'
+  | 'public_read_only';
+
+export interface ProposalErrorBody {
+  code: ProposalErrorCode;
+  message: string;
+}

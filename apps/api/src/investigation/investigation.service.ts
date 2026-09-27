@@ -7,6 +7,7 @@ import type {
   ToolTraceEntry,
 } from '@billing-resolution/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertNotPublicReadOnly } from '../proposals/reviewer-auth';
 import { runInvestigationLoop } from './agent/agent-loop';
 import {
   loadBoundsFromEnv,
@@ -33,6 +34,9 @@ export class InvestigationService {
    * No approvals, account mutations, refunds, or notifications exist in M2.
    */
   async run(ticketId: string): Promise<InvestigationView> {
+    // Public read-only previews must not be able to start investigations (or
+    // trigger any uncontrolled paid AI usage).
+    assertNotPublicReadOnly();
     const resolved = await this.tools.resolveScope(ticketId);
     if (!resolved) {
       throw new NotFoundException(`Ticket ${ticketId} not found`);
@@ -102,29 +106,36 @@ export class InvestigationService {
     isMock: boolean,
     outcome: AgentOutcome,
   ): Promise<InvestigationView> {
-    const saved = await this.prisma.investigation.create({
-      data: {
-        ticketId,
-        status: outcome.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
-        provider: providerId,
-        model,
-        isMock,
-        diagnosis: outcome.verdict?.diagnosis ?? null,
-        uncertainty: outcome.verdict?.uncertainty ?? null,
-        riskCategory: outcome.verdict?.riskCategory ?? null,
-        proposedNextStepType: outcome.verdict?.proposedNextStep?.type ?? null,
-        proposedNextStepDetail: outcome.verdict?.proposedNextStep?.detail ?? null,
-        draftReply: outcome.verdict?.draftReply ?? null,
-        supportingEvidence: (outcome.verdict?.supportingEvidence ??
-          []) as unknown as Prisma.InputJsonValue,
-        contradictingEvidence: (outcome.verdict?.contradictingEvidence ??
-          []) as unknown as Prisma.InputJsonValue,
-        toolTrace: outcome.trace as unknown as Prisma.InputJsonValue,
-        bounds: outcome.boundsUsage as unknown as Prisma.InputJsonValue,
-        policyOverrides: outcome.policyOverrides,
-        failureReason: outcome.failureReason ?? null,
-      },
-    });
+    const [, saved] = await this.prisma.$transaction([
+      // An investigation means a human has begun reviewing the ticket.
+      this.prisma.ticket.updateMany({
+        where: { id: ticketId, status: 'OPEN' },
+        data: { status: 'IN_REVIEW' },
+      }),
+      this.prisma.investigation.create({
+        data: {
+          ticketId,
+          status: outcome.status === 'COMPLETED' ? 'COMPLETED' : 'FAILED',
+          provider: providerId,
+          model,
+          isMock,
+          diagnosis: outcome.verdict?.diagnosis ?? null,
+          uncertainty: outcome.verdict?.uncertainty ?? null,
+          riskCategory: outcome.verdict?.riskCategory ?? null,
+          proposedNextStepType: outcome.verdict?.proposedNextStep?.type ?? null,
+          proposedNextStepDetail: outcome.verdict?.proposedNextStep?.detail ?? null,
+          draftReply: outcome.verdict?.draftReply ?? null,
+          supportingEvidence: (outcome.verdict?.supportingEvidence ??
+            []) as unknown as Prisma.InputJsonValue,
+          contradictingEvidence: (outcome.verdict?.contradictingEvidence ??
+            []) as unknown as Prisma.InputJsonValue,
+          toolTrace: outcome.trace as unknown as Prisma.InputJsonValue,
+          bounds: outcome.boundsUsage as unknown as Prisma.InputJsonValue,
+          policyOverrides: outcome.policyOverrides,
+          failureReason: outcome.failureReason ?? null,
+        },
+      }),
+    ]);
     return toView(saved);
   }
 }
