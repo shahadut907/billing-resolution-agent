@@ -1,0 +1,11 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Build scripts pnpm is allowed to run for third-party dependencies
+# (Prisma needs its engine download, esbuild/sharp ship native binaries).
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true

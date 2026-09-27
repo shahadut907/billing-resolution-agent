@@ -1,0 +1,26 @@
+{
+  "name": "billing-resolution-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Milestone 1: data foundation and read-only support console for a billing resolution agent (no agent behavior yet).",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "postinstall": "pnpm --filter @billing-resolution/db db:generate && pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @billing-resolution/api test:e2e",
+    "db:generate": "pnpm --filter @billing-resolution/db db:generate",
+    "db:deploy": "dotenv -e .env -- pnpm --filter @billing-resolution/db db:deploy",
+    "db:push": "dotenv -e .env -- pnpm --filter @billing-resolution/db db:push",
+    "db:migrate:dev": "dotenv -e .env -- pnpm --filter @billing-resolution/db exec prisma migrate dev",
+    "db:seed": "dotenv -e .env -- pnpm --filter @billing-resolution/db db:seed",
+    "db:studio": "dotenv -e .env -- pnpm --filter @billing-resolution/db db:studio"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^7.4.0"
+  }
+}
