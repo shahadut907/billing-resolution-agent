@@ -1,35 +1,38 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Billing Resolution Agent — Support Console',
+  title: 'Billing Resolution Agent — Support Workspace',
   description:
-    'Milestone 1: read-only support console over a seeded synthetic billing dataset. No automated diagnosis or actions yet.',
+    'AI-assisted billing support workspace: bounded read-only investigations, human approval, exactly-once sandbox actions.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <div className="page">
-          <header className="site-header">
-            <div className="container site-header__inner">
-              <Link href="/" className="brand">
-                Billing Resolution Agent
-              </Link>
-              <nav className="site-nav">
-                <Link href="/">Tickets</Link>
-              </nav>
-              <span className="chip">Milestone 1 · read-only</span>
+        <div className="app-shell">
+          <header className="app-header glass">
+            <div className="app-header__brand">
+              <span className="app-header__mark" aria-hidden="true" />
+              <div>
+                <p className="app-header__title">Billing Resolution Agent</p>
+                <p className="app-header__subtitle">Lumina Metrics, Inc. — synthetic support sandbox</p>
+              </div>
+            </div>
+            <div className="app-header__labels">
+              <span className="badge badge--sandbox" title="All data is synthetic; applied changes only ever touch this sandbox dataset.">
+                Sandbox data
+              </span>
+              <span className="badge badge--readmore" title="Investigations are advisory; only an authorized reviewer decision can apply a permitted change.">
+                Human-in-the-loop
+              </span>
             </div>
           </header>
-          <main className="container page-main">{children}</main>
-          <footer className="site-footer">
-            <div className="container">
-              Milestone 1 displays seeded synthetic data only. The agent does not diagnose,
-              decide, act, or contact anyone yet.
-            </div>
+          {children}
+          <footer className="app-footer">
+            All records are invented for demonstration. Investigations are advisory drafts; a
+            permitted change happens only after an authenticated reviewer approves it, exactly once.
           </footer>
         </div>
       </body>

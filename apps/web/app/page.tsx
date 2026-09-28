@@ -1,38 +1,31 @@
-import type { TicketSummary } from '@billing-resolution/types';
-import { TicketCard } from '../components/ticket-card';
-import { fetchTickets } from '../lib/api';
+import type { Metadata } from 'next';
+import type { MetaView, TicketSummary } from '@billing-resolution/types';
+import { fetchMeta, fetchTickets } from '../lib/api';
+import { Workspace } from '../components/workspace/workspace';
+import './globals.css';
 
 export const dynamic = 'force-dynamic';
 
-export default async function TicketsPage() {
-  let tickets: TicketSummary[] | undefined;
-  let apiError = false;
+export const metadata: Metadata = {
+  title: 'Billing Resolution Agent — Support Workspace',
+  description:
+    'AI-assisted billing support workspace over a seeded synthetic dataset: bounded read-only investigations, human approval, and exactly-once sandbox actions.',
+};
+
+export default async function WorkspacePage() {
+  let tickets: TicketSummary[] | null = null;
+  let meta: MetaView | null = null;
   try {
-    tickets = await fetchTickets();
+    [tickets, meta] = await Promise.all([fetchTickets(), fetchMeta()]);
   } catch {
-    apiError = true;
+    // The workspace renders an honest connection state and retries via the
+    // same-origin proxy from the client.
+    try {
+      meta = await fetchMeta();
+    } catch {
+      meta = null;
+    }
   }
 
-  return (
-    <>
-      <section className="page-head">
-        <h1>Support tickets</h1>
-        <p className="muted">
-          {tickets
-            ? `${tickets.length} seeded ticket${tickets.length === 1 ? '' : 's'} for the fictional company “Lumina Metrics, Inc.”. Open a ticket to see its persisted account, subscription, payment, and invoice records.`
-            : 'Read-only view of persisted billing records.'}
-        </p>
-      </section>
-      {apiError ? (
-        <div className="notice notice--error" role="alert">
-          <strong>API unreachable.</strong> Start the stack with <code>pnpm dev</code> (API
-          on port 4000) and reload this page.
-        </div>
-      ) : (
-        <div className="ticket-list">
-          {tickets?.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} />)}
-        </div>
-      )}
-    </>
-  );
+  return <Workspace initialTickets={tickets} meta={meta} />;
 }

@@ -2,12 +2,12 @@ import Link from 'next/link';
 
 export default function NotFound() {
   return (
-    <div className="notice">
+    <main className="not-found glass">
       <h1>Ticket not found</h1>
-      <p className="muted">No ticket with that id exists in the seeded dataset.</p>
-      <p>
-        <Link href="/">Back to all tickets</Link>
-      </p>
-    </div>
+      <p>The ticket you requested does not exist in this sandbox dataset.</p>
+      <Link href="/" className="btn btn--primary">
+        Back to the workspace
+      </Link>
+    </main>
   );
 }

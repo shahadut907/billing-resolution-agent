@@ -71,3 +71,38 @@ export const INVESTIGATION_STATUS_LABELS: Record<string, string> = {
   COMPLETED: 'Completed',
   FAILED: 'Failed',
 };
+
+export const ACTION_TYPE_LABELS: Record<string, string> = {
+  ENTITLEMENT_REPAIR: 'Entitlement repair (sandbox)',
+  DUPLICATE_INVOICE_CORRECTION: 'Duplicate invoice correction (sandbox)',
+};
+
+export const PROPOSAL_STATUS_LABELS: Record<string, string> = {
+  PROPOSED: 'Awaiting decision',
+  APPLIED: 'Applied',
+  REJECTED: 'Rejected',
+  ESCALATED: 'Escalated',
+};
+
+export const DECISION_LABELS: Record<string, string> = {
+  APPROVE: 'Approve & apply',
+  REJECT: 'Reject proposal',
+  ESCALATE: 'Escalate',
+};
+
+export const AUDIT_EVENT_LABELS: Record<string, string> = {
+  PROPOSAL_CREATED: 'Proposal created (server-side eligibility check passed)',
+  DECISION_RECORDED: 'Reviewer decision recorded',
+  APPROVAL_REJECTED: 'Approval refused by validation',
+  APPLY_SUCCEEDED: 'Sandbox action applied',
+  APPLY_FAILED: 'Application failed and rolled back',
+};
+
+export const PROPOSAL_ERROR_HINTS: Record<string, string> = {
+  escalation_only:
+    'This route allows escalation only — no account mutation may be proposed for it.',
+  not_eligible:
+    'The records do not support an executable action right now. Run a fresh investigation.',
+  no_completed_investigation: 'Run an investigation first — proposals derive from completed ones.',
+  proposal_exists: 'A proposal already exists for this investigation.',
+};

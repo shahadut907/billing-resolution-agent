@@ -1,4 +1,5 @@
 import type {
+  MetaView,
   InvestigationView,
   TicketDetail,
   TicketSummary,
@@ -48,4 +49,12 @@ export async function fetchLatestInvestigation(
     throw new ApiError(`Investigation request failed (${res.status})`, res.status);
   }
   return (await res.json()) as InvestigationView | null;
+}
+
+export async function fetchMeta(): Promise<MetaView> {
+  const res = await fetch(`${API_BASE_URL}/meta`, { cache: 'no-store' });
+  if (!res.ok) {
+    throw new ApiError(`Meta request failed (${res.status})`, res.status);
+  }
+  return (await res.json()) as MetaView;
 }
