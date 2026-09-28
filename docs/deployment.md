@@ -26,6 +26,30 @@ Supabase (Postgres). Anything that runs a Node 20 process and exposes
 
 ## Steps (human, with account access)
 
+### Fast path: Render Blueprint (recommended)
+
+The repository ships a [`render.yaml`](../render.yaml) Blueprint that defines
+both services with the public-demo configuration fixed (mock provider,
+`PUBLIC_READ_ONLY=1`, no reviewer passcode, health check on `/api/health`):
+
+1. Create the Neon database (step 1 below) and copy the connection string.
+2. Sign in at render.com **with GitHub** → dashboard → **New +** →
+   **Blueprint** → select this repository → **Apply**.
+3. Render prompts for two values (they are marked `sync: false` in the
+   blueprint):
+   - `DATABASE_URL` → paste the Neon connection string.
+   - `API_BASE_URL` → after the first deploy, open the **api** service page,
+     copy its `onrender.com` URL, and set
+     `API_BASE_URL = https://<api-host>.onrender.com/api` on the **web**
+     service (Environment tab) — then **Manual Deploy** the web service once.
+4. Run migrations + seed once against Neon (step 3 below) — the schema is
+   empty until you do.
+5. Verify: `https://<web-host>/` shows the workspace with the public
+   read-only banner; `https://<api-host>/api/health` returns
+   `{"status":"ok","database":true}`.
+
+### Manual path (what the blueprint automates)
+
 ### 1. Create the Neon database
 
 1. Sign up at neon.com → create a project.
@@ -55,12 +79,11 @@ Both are idempotent — re-running is safe.
 ### 4. Create the API service on Render
 
 - New Web Service → connect the GitHub repo.
-- Runtime: Node · Build: `pnpm install && pnpm --filter @billing-resolution/api build`
-  · Start: `node apps/api/dist/main.js`.
+- Runtime: Node · Build: `corepack enable && pnpm install --frozen-lockfile`
+  · Start: `node apps/api/dist/main.js` (binds Render's injected `PORT`).
 - Environment:
   - `DATABASE_URL` = Neon connection string (**secret**, never in code)
-  - `API_PORT` = `4000` (Render injects `PORT`; prefer
-    `API_PORT=$PORT` in the start command or bind the injected port)
+  - `NODE_VERSION` = `20`
   - `AI_PROVIDER` = `mock`
   - `PUBLIC_READ_ONLY` = `1` ← **required for a public demo**
   - Do **not** set `REVIEWER_PASSCODE` on the public service; decisions are

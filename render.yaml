@@ -1,0 +1,49 @@
+# Render Blueprint for the public read-only portfolio demo.
+#
+# Apply via: Render dashboard → New + → Blueprint → select this repository.
+# Fill in the two prompted values (sync: false) during apply:
+#   DATABASE_URL  — the Neon free-plan connection string (sslmode=require)
+#   API_BASE_URL  — https://<api-service-host>.onrender.com/api  (shown after
+#                   the API service is created; re-apply/save the web env var
+#                   then)
+#
+# The public demo configuration is fixed here by design:
+#   PUBLIC_READ_ONLY=1  → every mutating endpoint answers 403
+#   REVIEWER_PASSCODE   → deliberately NOT set; decision endpoints answer 503
+#   AI_PROVIDER=mock    → deterministic mock, clearly labeled, no AI spend
+
+services:
+  - type: web
+    name: billing-resolution-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: node apps/api/dist/main.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: AI_PROVIDER
+        value: mock
+      - key: PUBLIC_READ_ONLY
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+
+  - type: web
+    name: billing-resolution-web
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: node apps/web/node_modules/.bin/next start -p $PORT
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: API_BASE_URL
+        sync: false

@@ -103,6 +103,22 @@ export function InvestigationPanel({
         </p>
       )}
 
+      {meta && !investigation && !running && (
+        <p className="ai-mode-label" role="note">
+          {meta.aiProvider === 'mock' ? (
+            <>
+              <strong>AI mode: MOCK</strong> — investigations use deterministic rules over the
+              seeded records. No AI model is called, and every result is labeled as mock.
+            </>
+          ) : (
+            <>
+              <strong>AI mode: configured provider</strong> (<code>{meta.aiProvider}</code>) —
+              investigations will make real model calls and are labeled per run.
+            </>
+          )}
+        </p>
+      )}
+
       {meta && !meta.reviewerAuthConfigured && !readOnly && (
         <p className="callout callout--warning" role="note">
           Reviewer authentication is not configured (no <code>REVIEWER_PASSCODE</code>). Approval

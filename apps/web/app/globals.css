@@ -787,6 +787,16 @@ code {
   margin: 10px 0 14px;
 }
 
+.ai-mode-label {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(180, 83, 9, 0.09);
+  border: 1px solid rgba(180, 83, 9, 0.3);
+  color: #7c2d12;
+}
+
 .run-progress__bar {
   height: 6px;
   border-radius: 999px;

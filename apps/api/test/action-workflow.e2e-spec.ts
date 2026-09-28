@@ -541,6 +541,10 @@ describeIfDb('Action proposal workflow (e2e, real database)', () => {
 
   it('meta endpoint reports capability flags honestly', async () => {
     const res = await request(app.getHttpServer()).get('/api/meta').expect(200);
-    expect(res.body).toEqual({ reviewerAuthConfigured: true, publicReadOnly: false });
+    expect(res.body).toEqual({
+      reviewerAuthConfigured: true,
+      publicReadOnly: false,
+      aiProvider: 'mock',
+    });
   });
 });

@@ -287,6 +287,8 @@ export interface TicketEscalationView {
 export interface MetaView {
   reviewerAuthConfigured: boolean;
   publicReadOnly: boolean;
+  /** Configured investigation provider ("mock" or "openai") — not a secret. */
+  aiProvider: string;
 }
 
 export type ProposalErrorCode =
