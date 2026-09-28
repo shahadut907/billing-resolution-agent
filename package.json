@@ -18,7 +18,8 @@
     "db:push": "dotenv -e .env -- pnpm --filter @billing-resolution/db db:push",
     "db:migrate:dev": "dotenv -e .env -- pnpm --filter @billing-resolution/db exec prisma migrate dev",
     "db:seed": "dotenv -e .env -- pnpm --filter @billing-resolution/db db:seed",
-    "db:studio": "dotenv -e .env -- pnpm --filter @billing-resolution/db db:studio"
+    "db:studio": "dotenv -e .env -- pnpm --filter @billing-resolution/db db:studio",
+    "eval": "dotenv -e .env -- pnpm --filter @billing-resolution/api eval"
   },
   "devDependencies": {
     "dotenv-cli": "^7.4.0"
