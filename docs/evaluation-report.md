@@ -1,6 +1,6 @@
 # Evaluation report
 
-Generated: 2026-09-28T00:00:52.041Z by `apps/api/src/evaluation/run-evaluation.ts` (`pnpm eval`).
+Generated: 2026-09-28T09:18:39.263Z by `apps/api/src/evaluation/run-evaluation.ts` (`pnpm eval`).
 
 This is NOT an accuracy benchmark and reports no accuracy percentage. Every row is a
 behavioral assertion with expected vs actual outcome, executed against the real

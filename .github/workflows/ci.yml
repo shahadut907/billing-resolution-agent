@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # GitHub-hosted runner service container — no Docker needed locally.
+        image: postgres:16
+        env:
+          POSTGRES_USER: billing_agent
+          POSTGRES_PASSWORD: billing_agent
+          POSTGRES_DB: billing_m1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U billing_agent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://billing_agent:billing_agent@127.0.0.1:5432/billing_m1?schema=public
+      API_BASE_URL: http://127.0.0.1:4000/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Apply migrations and seed (idempotent)
+        run: |
+          pnpm --filter @billing-resolution/db db:deploy
+          pnpm --filter @billing-resolution/db db:seed
+
+      - name: Unit tests
+        run: pnpm -r test
+
+      - name: Database-backed e2e tests (approval gates, agent, tickets)
+        run: pnpm test:e2e
+
+      - name: Deterministic evaluation (writes docs/evaluation-report.md)
+        run: pnpm eval
+
+      - name: Check for uncommitted changes
+        run: git diff --exit-code --stat || (echo "::warning::evaluation report differs from committed version" && git diff --stat)

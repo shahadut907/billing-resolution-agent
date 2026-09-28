@@ -1,161 +1,234 @@
 # Billing Resolution Agent
 
-AI agent for investigating SaaS billing issues with evidence, human approval,
-and audited actions.
+An AI-assisted billing support workspace for one fictional SaaS company
+(**Lumina Metrics, Inc.**). A support reviewer opens a synthetic billing ticket,
+runs a **bounded, read-only AI investigation**, sees every record and tool call
+behind the diagnosis, reviews a **proposed action and draft reply**, then
+**approves, rejects, or escalates**. Only an authorized human decision can cause
+a permitted change to the synthetic database — exactly once, with a durable
+audit trail.
 
-**Current state: Milestones 1–2.** M1 is the data foundation and read-only
-console; M2 adds a **bounded, read-only AI investigation agent**. There is still
-no approval workflow, no account mutation, no refunds, and no email sending —
-investigations are advisory drafts persisted for human review, by design.
+> Every record in this project is invented: names, `.example` email addresses,
+> payment references, and amounts. "Actions" only ever mutate the local
+> synthetic sandbox dataset — no Stripe, no email, no real customers.
 
-## What Milestone 1 delivered
+## What is implemented
 
-- A pnpm monorepo with a **Next.js** frontend, a **NestJS** API, and a
-  **Prisma** schema targeting **PostgreSQL** (Docker intentionally not used).
-- Synthetic records for one fictional SaaS company — **Lumina Metrics, Inc.** —
-  covering accounts, subscriptions, payments, invoices, tickets, and policies.
-  All names, email addresses (`.example` TLD), payment references, and amounts
-  are invented.
-- Four seeded ticket scenarios that later milestones work against:
-
-  | Reference | Scenario | What the persisted records show |
-  | --- | --- | --- |
-  | `TCK-1001` | Paid but inactive plan | A successful payment covering the current period while the subscription sits `CANCELED`. |
-  | `TCK-1002` | Duplicate invoices with one charge | Two paid invoices that reference the same successful payment. |
-  | `TCK-1003` | Reported cross-account exposure | The reporter's account is linked to a distinct related account via the ticket; the other account's records are deliberately not retrieved. |
-  | `TCK-1004` | Ambiguous possible double charge | Two similar charges two days apart, each mapped to its own invoice, so the data alone cannot confirm a duplicate. |
-
-- Read-only API endpoints and a responsive frontend (ticket list + detail) that
-  render the persisted ticket and its related records.
-- An **idempotent seed command** (upserts on stable keys, safe to re-run),
-  committed Prisma migrations, and tests covering dataset integrity, API
-  behavior, and seed idempotency.
-
-## What Milestone 2 added
-
-A bounded, read-only investigation agent (`POST /api/tickets/:id/investigation`):
-
-- **Hard scope enforcement in backend tools.** The model can request only six
-  zero-argument tools (`get_ticket`, `get_account`, `list_subscriptions`,
-  `list_payments`, `list_invoices`, `list_policies`), each pre-scoped server-side
-  to the investigated ticket's reporter account. There is no tool that can reach
-  another account's records, whatever the ticket text or the model requests;
-  arguments and unknown tools are rejected (and the rejection is traced).
-  For cross-account exposure reports the related account's records are never
-  retrieved, and its name/email may not appear in the generated output.
-- **Provider adapter with a configurable model/key.** `AI_PROVIDER=mock`
-  (default) runs a deterministic, clearly labeled mock — `isMock: true` is
-  persisted and shown in the UI ("no AI model was called"). `AI_PROVIDER=openai`
-  uses any OpenAI-compatible chat-completions API (`AI_API_KEY`, `AI_MODEL`,
-  optional `AI_BASE_URL`). The key stays in the API process: never in responses,
-  logs, or Git; provider errors are sanitized.
-- **Bounds.** Elapsed time (`AGENT_TIME_BUDGET_MS`, default 20s), tool calls
-  (`AGENT_MAX_TOOL_CALLS`, default 12), loop turns, provider retries (2), and
-  output-validation retries (2). Exceeding any bound fails the investigation
-  with a recorded reason — nothing hangs or runs away.
-- **Structured output validation.** The model's verdict (diagnosis, supporting
-  and contradicting evidence with citations, uncertainty, risk category,
-  proposed next step, draft reply) is validated against a fixed schema, and
-  **every cited record ID is verified against the evidence the tools actually
-  returned**. Unverifiable citations fail the investigation.
-- **Server-side policy overrides (the model cannot talk its way out):**
-  cross-account exposure is always forced to `URGENT` risk + `SECURITY_ESCALATION`
-  next step; ambiguous possible-double-charge reports are forced to `UNCERTAIN`
-  + `FINANCIAL_REVIEW`. Outputs claiming a refund, reactivation, or repair are
-  rejected (pattern scan) and retried, then failed honestly.
-- **Persistence for review.** Every run (success or failure) is stored with its
-  redacted tool trace (tool, argument keys only, row counts, record ids,
-  durations — no record payloads) and the applied overrides; the frontend shows
-  the latest investigation on the ticket detail page.
-
-## Repository layout
-
-| Path | What it is |
+| Area | Status |
 | --- | --- |
-| `apps/api` | NestJS REST API (port 4000): read-only ticket endpoints + investigation agent |
-| `apps/web` | Next.js App Router frontend (port 3000) |
-| `packages/db` | Prisma schema, migrations, synthetic dataset, idempotent seed |
-| `packages/types` | Shared API response types used by both apps |
+| Monorepo (pnpm): Next.js web, NestJS API, Prisma/PostgreSQL, shared types | ✅ working |
+| Synthetic dataset: 6 accounts, 4 ticket scenarios, 4 policies, idempotent seed | ✅ working |
+| Bounded, read-only AI investigation (mock + OpenAI-compatible providers) | ✅ working (mock verified; real provider unverified — no API key) |
+| Immutable action proposals with server-side eligibility, version pinning, expiry | ✅ working |
+| Reviewer-authenticated approve / reject / escalate with exactly-once apply | ✅ working (database-proven under concurrency) |
+| Durable audit trail with before/after evidence | ✅ working |
+| Three-panel glass workspace UI, mobile-stacked, reduced-motion/-transparency | ✅ working |
+| Deterministic evaluation harness (16 cases, no API key needed) | ✅ passing — see [docs/evaluation-report.md](docs/evaluation-report.md) |
+| Public read-only preview mode (`PUBLIC_READ_ONLY=1`) | ✅ implemented |
+| Live public deployment | ❌ not deployed — no hosting account available; config + steps in [docs/deployment.md](docs/deployment.md) |
 
-## Prerequisites
+## The four demo journeys
 
-- Node.js 20+ (24.x used during development)
-- pnpm 10+ (`npm install -g pnpm` or `corepack enable`)
-- A reachable **PostgreSQL 14+** instance — install one locally or point
-  `DATABASE_URL` at any instance you control. No Docker, no cloud signup.
+| Reference | Scenario | Investigation says | What approval can do |
+| --- | --- | --- | --- |
+| `TCK-1001` | Paid but inactive plan | Successful payment covers a `CANCELED` subscription's period (CONFIRMED). | **Entitlement repair** — sets the subscription `ACTIVE` for the paid period, once, then the ticket resolves. |
+| `TCK-1002` | Duplicate invoices, one charge | Two paid invoices reference the same successful charge (CONFIRMED). | **Duplicate-invoice correction** — voids only the later duplicate invoice; no refund, ever. |
+| `TCK-1003` | Reported cross-account exposure | Urgent security escalation; the other account's records were never read. | **Escalation only** — no mutation proposal can exist, no false reassurance, no disclosure of the other account. |
+| `TCK-1004` | Ambiguous possible double charge | Two similar charges each map to a distinct invoice; uncertainty preserved (`UNCERTAIN`). | **Escalation only** — routes to financial review; the system cannot invent a refund. |
 
-## Setup
+## Architecture
 
-```bash
-pnpm install
-cp .env.example .env   # then edit DATABASE_URL with your own local Postgres values
-pnpm db:deploy         # apply the committed Prisma migrations
-pnpm db:seed           # idempotent — safe to run again at any time
-pnpm dev               # starts API (port 4000) and web (port 3000) together
+```mermaid
+flowchart LR
+    subgraph browser["Browser"]
+        W["Next.js workspace UI\n(three panels)"]
+    end
+    subgraph nextsrv["Next.js server"]
+        P["/backend proxy rewrite"]
+        S["Server components\n(server-side fetch)"]
+    end
+    subgraph api["NestJS API (private)"]
+        T["Tickets API\n(read-only)"]
+        I["Investigation runner\n+ scoped tools"]
+        A["Proposals & decisions\n+ reviewer auth"]
+        M["Audit trail"]
+    end
+    DB[("PostgreSQL\nsynthetic dataset")]
+    P["Optional real model\n(OpenAI-compatible API)"]
+
+    W -- same-origin /backend/* --> P --> T & I & A
+    S -- server-side fetch --> T & I & A
+    I -- "zero-arg, ticket-scoped\ntool allowlist" --> DB
+    I -.-> P2
+    A -- "locked transaction,\nexactly-once ledger" --> DB
+    A --> M --> DB
+    T & I & A --> DB
 ```
 
-Open http://localhost:3000 for the ticket list; each ticket detail page has an
-"AI investigation" panel (mock mode unless you configure a real provider).
+See [docs/architecture.md](docs/architecture.md) for the security boundaries:
+tool scoping, verdict validation, prompt-injection containment, eligibility
+rules, the two-phase approval transaction, and the exactly-once ledger.
 
-## Useful scripts (run from the repo root)
+## Running it locally (no Docker)
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm dev` | Run the API and web dev servers together |
-| `pnpm build` | Build every workspace package |
-| `pnpm test` | Unit + dataset tests (no database required) |
-| `pnpm test:e2e` | API end-to-end tests against a live database (auto-skips when the DB is unreachable) |
-| `pnpm db:deploy` | Apply committed migrations (`prisma migrate deploy`) |
-| `pnpm db:seed` | Idempotent seed |
-| `pnpm db:migrate:dev` | Create a new migration after schema edits |
-| `pnpm db:studio` | Prisma Studio |
+Requirements: Node ≥ 20, pnpm 12 (`corepack enable`), PostgreSQL 14+ running
+locally. Everything runs on your machine — nothing else is needed.
 
-Environment: the git-ignored `.env` at the repo root holds `DATABASE_URL`,
-`API_PORT`, `API_BASE_URL`, and the AI provider settings (`AI_PROVIDER`,
-`AI_MODEL`, `AI_BASE_URL`, `AI_API_KEY`). Copy `.env.example` and fill in your
-own values — never commit real credentials or API keys.
+```bash
+# 1. Install
+pnpm install
 
-## API
+# 2. Configure
+cp .env.example .env
+# then edit .env:
+#   DATABASE_URL=postgresql://USER:PASSWORD@127.0.0.1:5432/billing_resolution?schema=public
+#   REVIEWER_PASSCODE=choose-your-own-reviewer-secret   # decisions are disabled without it
+#   (AI_PROVIDER=mock by default — no API key needed)
 
-| Endpoint | Description |
-| --- | --- |
-| `GET /api/health` | Liveness plus a database connectivity flag |
-| `GET /api/tickets?status=OPEN\|IN_REVIEW\|RESOLVED` | Ticket list with account names, newest first |
-| `GET /api/tickets/:id` | Ticket detail with the reporter account, related account (when linked), subscriptions, payments, invoices, and matching policies |
-| `POST /api/tickets/:id/investigation` | Run one bounded, read-only AI investigation; persists and returns it |
-| `GET /api/tickets/:id/investigation` | Latest persisted investigation for the ticket (or `null`) |
+# 3. Create schema + seed (both idempotent / re-runnable)
+pnpm db:deploy
+pnpm db:seed
 
-All endpoints are read-only with respect to billing data. Investigations are
-advisory drafts for human review — nothing is executed, refunded, repaired, or
-sent.
+# 4a. Development
+pnpm dev            # API on :4000, web on :3000
 
-## Tests
+# 4b. Production-style local run
+pnpm build
+# start the API: cd apps/api && node dist/main.js   (with .env loaded)
+# start the web: cd apps/web && node_modules/.bin/next start
 
-Three clearly separated layers:
+# 5. Open http://localhost:3000
+```
 
-- **Deterministic mock provider** (shipped, default): the e2e suite runs all
-  four seeded scenarios end to end, checks persistence and the redacted trace,
-  and asserts the exposure case never discloses the related account and the
-  ambiguous case stays `UNCERTAIN`/financial-review. Persisted as
-  `isMock: true` — never presented as a real model call.
-- **Test-only fake provider** (unit): scriptable turns cover wrong-account tool
-  access (rejected before any query), prompt injection in ticket text (unknown
-  tools and scope-widening arguments rejected; output citations still verified),
-  malformed model output (bounded retries → `invalid_output`), provider failure
-  (bounded retries, sanitized error), and time/tool/loop budget exhaustion.
-- **Real provider smoke test** (strictly opt-in): `provider-smoke.e2e-spec.ts`
-  runs one real model call only when `AI_SMOKE_TEST=1`, `AI_PROVIDER=openai`,
-  `AI_API_KEY`, and `AI_MODEL` are set; otherwise it reports as *skipped* and
-  no real call happens anywhere in the suite.
-- `packages/db` additionally covers dataset integrity invariants and — when a
-  database is reachable — seed idempotency (seeds twice, asserts identical
-  state).
+Starting PostgreSQL on this machine (if it is not running):
+`sudo service postgresql start` (Debian/Ubuntu) or `brew services start
+postgresql` (macOS). Never expose PostgreSQL on a public interface; the dev
+setup here uses loopback-only trust auth, which is a development-only
+convenience.
 
-## Roadmap
+### Walking a full journey
 
-- **Milestone 1:** data model, seed, read-only API and console. ✅
-- **Milestone 2:** bounded, read-only AI investigations with scoped tools,
-  validated structured output, policy overrides, and persisted review records. ✅
-- **Later milestones (planned, not started):** human approval workflow, audited
-  actions, notifications. Nothing beyond M2 exists yet — this console makes no
-  claims about executing resolutions.
+1. Open `http://localhost:3000` and select **TCK-1001**.
+2. Click **Run investigation** — the right panel shows the (mock-labeled)
+   diagnosis, evidence with citations, contradicting evidence, and the redacted
+   tool trace.
+3. Click **Derive action proposal** — server-side code (not the model) decides
+   eligibility and pins record versions, policy version, and expiry.
+4. Enter a reviewer name + your `REVIEWER_PASSCODE`, click **Approve & apply** —
+   the subscription flips to `ACTIVE` in the center panel, the ticket resolves,
+   and the audit timeline records the decision and before/after evidence.
+5. Try **TCK-1003**: deriving a proposal is refused (escalation-only), and the
+   escalation form records a durable decision without touching any account.
+
+## Testing
+
+```bash
+pnpm test           # unit tests (dataset integrity, agent loop, verdicts,
+                    # eligibility engine, reviewer auth, mock provider)
+pnpm test:e2e       # database-backed HTTP tests: tickets, investigations,
+                    # and the 22-test approval gate suite (auth, expiry,
+                    # policy change, record drift, wrong-account, concurrent
+                    # duplicate approvals, rollback, all four scenarios)
+pnpm eval           # deterministic 16-case evaluation; writes
+                    # docs/evaluation-report.md (no API key required)
+pnpm build          # builds all packages
+```
+
+The e2e suite needs a reachable PostgreSQL (same `DATABASE_URL`). Without one
+it reports as **SKIPPED** — never as passing. The real-provider smoke test
+(`apps/api/test/provider-smoke.e2e-spec.ts`) runs exactly one model call and
+only when `AI_SMOKE_TEST=1`, `AI_PROVIDER=openai`, `AI_API_KEY`, and `AI_MODEL`
+are all set; it is skipped otherwise.
+
+## Mock vs real model
+
+- `AI_PROVIDER=mock` (default): a deterministic rules-based provider drives the
+  same protocol, validation, and persistence pipeline as a real model. Every
+  such investigation is persisted with `provider="mock"`, `isMock=true`, and the
+  UI labels it **MOCK · no AI model called**. It is never presented as a real
+  model call.
+- `AI_PROVIDER=openai` + `AI_API_KEY` + `AI_MODEL` (+ optional `AI_BASE_URL`):
+  any OpenAI-compatible chat-completions API. Results are labeled **REAL MODEL
+  · provider / model**. The key lives only in the API process; it is never sent
+  to the browser or persisted.
+- **Real-provider behavior is explicitly unverified in this repository's
+  evaluation** — no inference API key was available when the evaluation report
+  was generated. The harness, bounds, and validation paths are identical for
+  both providers; only the text-generation step differs.
+
+## Security boundaries (summary)
+
+- **Tool scope is server-side and zero-argument.** The model can only request
+  six allowlisted tools pre-scoped to one ticket's reporter account; any
+  arguments (e.g. an attacker-supplied `accountId`) are rejected before a query
+  runs. Ticket text is treated as data, not instructions.
+- **Model text can never widen anything.** Citations are checked against
+  gathered evidence; completed-action claims and related-account disclosures are
+  rejected; policy overrides force URGENT/SECURITY_ESCALATION for exposure and
+  UNCERTAIN/FINANCIAL_REVIEW for ambiguous charges after the model answers.
+- **The model cannot create proposals.** Server-side code derives them from the
+  live records and refuses anything except entitlement repair and duplicate-
+  invoice correction on matching scenarios. Exposure and ambiguous-charge routes
+  are structurally escalation-only.
+- **Only an authenticated reviewer can cause a change.** Decisions require the
+  `REVIEWER_PASSCODE` (constant-time compared; no default — unset means the
+  decision endpoints answer `503` and the workflow is off).
+- **Exactly once.** Approval re-validates expiry, record versions, policy
+  version, and account ownership inside one row-locked transaction; an
+  `AppliedAction` ledger with a `(ticket, actionType)` unique constraint makes a
+  second application a database-level impossibility. Any in-transaction failure
+  rolls everything back — the ticket is not resolved — and is recorded as a
+  failed apply attempt.
+- **Public previews are read-only.** `PUBLIC_READ_ONLY=1` makes every mutating
+  endpoint answer `403`, so shared demos cannot mutate the dataset or trigger
+  paid AI usage. The browser never talks to the API cross-origin (same-origin
+  `/backend` proxy) and never sees provider credentials.
+
+Full details: [docs/architecture.md](docs/architecture.md).
+
+## Project layout
+
+```
+apps/web        Next.js workspace (three-panel UI, glass theme)
+apps/api        NestJS API (tickets, investigations, proposals, meta)
+packages/db     Prisma schema, migrations, idempotent seed + dataset
+packages/types  Shared API contract types
+docs/           Architecture, evaluation report, deployment guide
+```
+
+## Environment variables (names only — never commit values)
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | db, api | PostgreSQL connection string |
+| `API_PORT` | api | API listen port (default 4000) |
+| `API_BASE_URL` | web, scripts | Base URL the web server uses to reach the API |
+| `AI_PROVIDER` | api | `mock` (default) or `openai` |
+| `AI_API_KEY` | api | Provider key — stays in the API process |
+| `AI_MODEL` | api | Model id for the real provider |
+| `AI_BASE_URL` | api | Optional OpenAI-compatible base URL |
+| `AGENT_TIME_BUDGET_MS` | api | Wall-clock investigation budget (default 20000) |
+| `AGENT_MAX_TOOL_CALLS` | api | Tool-call budget (default 12) |
+| `REVIEWER_PASSCODE` | api | Reviewer secret; unset = decisions disabled |
+| `ACTION_PROPOSAL_TTL_MINUTES` | api | Proposal expiry (default 30) |
+| `PUBLIC_READ_ONLY` | api | `1` = public read-only preview (all mutations 403) |
+
+## Deployment
+
+Deployment-ready configuration and the exact remaining human steps (free-tier
+Postgres + web hosts, verified notes on current free-tier terms) are in
+[docs/deployment.md](docs/deployment.md). Nothing has been deployed from this
+repository — no hosting accounts exist in this environment.
+
+## Limitations (honest list)
+
+- One shared synthetic dataset: the demo is not multi-tenant. Public previews
+  must run with `PUBLIC_READ_ONLY=1`; per-visitor sandbox isolation is future
+  work.
+- Real-provider behavior is unverified (no API key was available); the mock
+  provider exercises everything except the actual text generation.
+- "Entitlement repair" and "duplicate-invoice correction" only mutate the
+  synthetic tables described above — no payment processor, email, or external
+  system exists here.
+- Reviewer identity is a shared passcode + display name, appropriate for a demo
+  but not a substitute for real SSO in production.
