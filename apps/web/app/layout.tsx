@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Billing Resolution Agent — Support Workspace',
+  title: 'Support workspace · Billing Resolution Agent',
   description:
-    'AI-assisted billing support workspace: bounded read-only investigations, human approval, exactly-once sandbox actions.',
+    'Review billing tickets, investigations, and approved next steps for the Lumina Metrics demo workspace.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -13,17 +13,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <div className="app-shell">
           <header className="app-header">
-            <span className="app-header__mark" aria-hidden="true" />
-            <div>
-              <p className="app-header__title">Billing Resolution Agent</p>
-              <p className="app-header__subtitle">Lumina Metrics, Inc. — synthetic support sandbox</p>
+            <div className="brand">
+              <span className="brand__mark" aria-hidden="true" />
+              <span className="brand__name">Billing Resolution Agent</span>
             </div>
+            <span className="app-header__divider" aria-hidden="true" />
+            <span className="app-header__page">Support workspace</span>
+            <span
+              className="demo-badge"
+              title="Demo data. Every record in this workspace is invented for demonstration, and applied changes only ever touch this demo dataset."
+            >
+              Demo data
+            </span>
           </header>
           {children}
-          <footer className="app-footer">
-            All records are invented for demonstration. Investigations are advisory drafts; a
-            permitted change happens only after an authenticated reviewer approves it, exactly once.
-          </footer>
         </div>
       </body>
     </html>

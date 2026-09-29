@@ -23,12 +23,12 @@ export interface WorkspaceProps {
 type LoadState = 'idle' | 'loading' | 'error';
 
 /**
- * Support workspace: tickets (left), case summary + evidence (center),
- * investigation and permitted next step (right). One shared page scroll —
- * no independently scrolling panels.
+ * Support workspace: ticket queue (left), case (center), investigation and
+ * next steps (right). One shared page scroll.
  */
 export function Workspace({ initialTickets, meta }: WorkspaceProps) {
   const [tickets, setTickets] = useState<TicketSummary[] | null>(initialTickets);
+  const [ticketsError, setTicketsError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(initialTickets?.[0]?.id ?? null);
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [detailState, setDetailState] = useState<LoadState>('idle');
@@ -38,6 +38,26 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
   const [running, setRunning] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+
+  const fetchTickets = useCallback(async () => {
+    try {
+      setTickets(await clientApi.tickets());
+      setTicketsError(null);
+    } catch (error) {
+      setTickets(null);
+      setTicketsError(
+        error instanceof ClientApiError ? error.message : 'Could not load tickets.',
+      );
+    }
+  }, []);
+
+  // If the server render could not reach the API, retry once on mount so the
+  // user sees content as soon as it is available.
+  useEffect(() => {
+    if (initialTickets === null) {
+      void fetchTickets();
+    }
+  }, [initialTickets, fetchTickets]);
 
   const selectTicket = useCallback((id: string, updateUrl: boolean) => {
     setSelectedId(id);
@@ -95,8 +115,9 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
   const refreshTickets = useCallback(async () => {
     try {
       setTickets(await clientApi.tickets());
+      setTicketsError(null);
     } catch {
-      // Refreshed opportunistically; failures surface elsewhere.
+      // Refreshed opportunistically; failures surface in the queue.
     }
   }, []);
 
@@ -109,11 +130,10 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
       setInvestigation(inv);
       setProposals(await clientApi.proposals(selectedId));
       await refreshTickets();
-      const refreshed = await clientApi.ticket(selectedId);
-      setDetail(refreshed);
+      setDetail(await clientApi.ticket(selectedId));
       setDetailState('idle');
     } catch (error) {
-      setBanner(error instanceof ClientApiError ? error.message : 'Investigation failed.');
+      setBanner(error instanceof ClientApiError ? error.message : 'The investigation failed.');
     } finally {
       setRunning(false);
     }
@@ -129,7 +149,7 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
       if (error instanceof ClientApiError) {
         return { errorCode: error.code ?? 'unknown', message: error.message };
       }
-      return { errorCode: 'unknown', message: 'Creating the proposal failed.' };
+      return { errorCode: 'unknown', message: 'Preparing the action failed.' };
     }
   }, [selectedId]);
 
@@ -154,7 +174,7 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
       } catch (error) {
         return {
           ok: false as const,
-          message: error instanceof ClientApiError ? error.message : 'Decision failed.',
+          message: error instanceof ClientApiError ? error.message : 'The decision failed.',
         };
       }
     },
@@ -178,43 +198,29 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
     [selectedId],
   );
 
-  const retryConnection = useCallback(async () => {
-    setTickets(null);
-    try {
-      setTickets(await clientApi.tickets());
-    } catch {
-      setTickets([]);
-    }
-  }, []);
-
   return (
     <>
       <a href="#ticket-detail" className="skip-link">
-        Skip to ticket detail
+        Skip to case
       </a>
-      <div className="toolbar" role="note">
-        <span className="toolbar__item">
-          Sandbox data — all records are synthetic; applied changes only ever touch this dataset
-        </span>
-        <span className="toolbar__item toolbar__item--right">
-          {meta
-            ? meta.aiProvider === 'mock'
-              ? 'AI: mock — no model is called'
-              : `AI: ${meta.aiProvider}`
-            : ''}
-        </span>
-      </div>
       <div className="workspace">
         <TicketList
           tickets={tickets}
+          ticketsError={ticketsError}
+          onRetry={fetchTickets}
           selectedId={selectedId}
           onSelect={(id) => selectTicket(id, true)}
-          onRetry={retryConnection}
         />
-        <TicketDetailPanel detail={detail} state={detailState} banner={banner} />
+        <TicketDetailPanel
+          detail={detail}
+          state={detailState}
+          banner={banner}
+          onRetry={() => setReloadKey((key) => key + 1)}
+        />
         <InvestigationPanel
           ticket={detail?.ticket ?? null}
           investigation={investigation}
+          loading={detailState === 'loading'}
           proposals={proposals}
           escalations={escalations}
           running={running}

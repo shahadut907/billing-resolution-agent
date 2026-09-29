@@ -13,11 +13,13 @@ import type {
 } from '@billing-resolution/types';
 
 /**
- * Browser-side API access. EVERY call goes through the same-origin /backend
- * proxy served by Next, which forwards to the NestJS API server-side — the
- * browser never makes cross-origin requests and never sees provider
- * credentials or the API host.
+ * Browser-side API access. Every call goes through the same-origin /backend
+ * proxy served by Next, which forwards to the NestJS API server-side.
+ * Requests carry a bounded timeout so the UI can always reach a failure
+ * state instead of waiting forever.
  */
+
+const DEFAULT_TIMEOUT_MS = 12_000;
 
 export class ClientApiError extends Error {
   constructor(
@@ -36,10 +38,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     res = await fetch(`/backend${path}`, {
       cache: 'no-store',
       headers: { 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
       ...init,
     });
   } catch {
-    throw new ClientApiError('Could not reach the API through the backend proxy.', 0);
+    throw new ClientApiError(
+      'The request timed out or the API could not be reached.',
+      0,
+    );
   }
   if (!res.ok) {
     let code: string | undefined;
@@ -61,8 +67,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+export type TicketStatusFilter = 'ALL' | 'OPEN' | 'IN_REVIEW' | 'RESOLVED';
+
 export const clientApi = {
-  tickets: () => request<TicketSummary[]>('/tickets'),
+  tickets: (status: TicketStatusFilter = 'ALL') =>
+    request<TicketSummary[]>(status === 'ALL' ? '/tickets' : `/tickets?status=${status}`),
   ticket: (id: string) => request<TicketDetail>(`/tickets/${encodeURIComponent(id)}`),
   latestInvestigation: (id: string) =>
     request<InvestigationView | null>(`/tickets/${encodeURIComponent(id)}/investigation`),
@@ -71,8 +80,6 @@ export const clientApi = {
       method: 'POST',
     }),
   proposals: (id: string) => request<ProposalView[]>(`/tickets/${encodeURIComponent(id)}/proposals`),
-  proposal: (id: string) =>
-    request<ProposalWithAuditsView>(`/proposals/${encodeURIComponent(id)}`),
   createProposal: (id: string) =>
     request<ProposalView>(`/tickets/${encodeURIComponent(id)}/proposal`, { method: 'POST' }),
   decide: (proposalId: string, body: { decision: string; reviewer: string; passcode: string }) =>
@@ -90,5 +97,7 @@ export const clientApi = {
     }),
   escalations: (ticketId: string) =>
     request<TicketEscalationView[]>(`/tickets/${encodeURIComponent(ticketId)}/escalations`),
+  proposal: (id: string) =>
+    request<ProposalWithAuditsView>(`/proposals/${encodeURIComponent(id)}`),
   meta: () => request<MetaView>('/meta'),
 };

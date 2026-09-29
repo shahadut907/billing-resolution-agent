@@ -49,7 +49,7 @@ export const RISK_LABELS: Record<string, string> = {
   LOW: 'Low',
   MEDIUM: 'Medium',
   HIGH: 'High',
-  URGENT: 'Urgent — escalate',
+  URGENT: 'Urgent',
 };
 
 export const UNCERTAINTY_LABELS: Record<string, string> = {
@@ -73,8 +73,8 @@ export const INVESTIGATION_STATUS_LABELS: Record<string, string> = {
 };
 
 export const ACTION_TYPE_LABELS: Record<string, string> = {
-  ENTITLEMENT_REPAIR: 'Entitlement repair (sandbox)',
-  DUPLICATE_INVOICE_CORRECTION: 'Duplicate invoice correction (sandbox)',
+  ENTITLEMENT_REPAIR: 'Repair the entitlement',
+  DUPLICATE_INVOICE_CORRECTION: 'Void the duplicate invoice',
 };
 
 export const PROPOSAL_STATUS_LABELS: Record<string, string> = {
@@ -99,10 +99,8 @@ export const AUDIT_EVENT_LABELS: Record<string, string> = {
 };
 
 export const PROPOSAL_ERROR_HINTS: Record<string, string> = {
-  escalation_only:
-    'This route allows escalation only — no account mutation may be proposed for it.',
-  not_eligible:
-    'The records do not support an executable action right now. Run a fresh investigation.',
-  no_completed_investigation: 'Run an investigation first — proposals derive from completed ones.',
+  escalation_only: 'This ticket route allows escalation only. No account change can be proposed.',
+  not_eligible: 'The records do not support an executable action right now. Re-run the investigation.',
+  no_completed_investigation: 'Run an investigation first. Proposals are derived from completed ones.',
   proposal_exists: 'A proposal already exists for this investigation.',
 };

@@ -11,7 +11,7 @@ import type {
   TicketEscalationView,
 } from '@billing-resolution/types';
 import { clientApi } from '../../lib/client';
-import { formatDateTime } from '../../lib/format';
+import { formatDate, formatDateTime } from '../../lib/format';
 import {
   ACTION_TYPE_LABELS,
   AUDIT_EVENT_LABELS,
@@ -21,6 +21,7 @@ import {
   PROPOSAL_STATUS_LABELS,
 } from '../../lib/labels';
 import { Expander } from './expander';
+import { InvestigationSkeleton } from './skeleton';
 
 type DecideFn = (
   proposalId: string,
@@ -40,15 +41,16 @@ type CreateProposalFn = () => Promise<
 >;
 
 /**
- * Routes whose investigation outcome can never be executed by the sandbox.
- * For these, escalation is the primary (only) action and no proposal is
- * offered — mirroring the server-side eligibility rules.
+ * Routes whose outcome can never be executed by the sandbox. For these,
+ * escalation is the primary (only) action and no proposal is offered,
+ * mirroring the server-side eligibility rules.
  */
 const ESCALATION_ONLY_ROUTES = ['SECURITY_ESCALATION', 'FINANCIAL_REVIEW', 'CHARGE_VERIFICATION'];
 
 export function InvestigationPanel({
   ticket,
   investigation,
+  loading,
   proposals,
   escalations,
   running,
@@ -60,6 +62,7 @@ export function InvestigationPanel({
 }: {
   ticket: { id: string; reference: string; status: string } | null;
   investigation: InvestigationView | null;
+  loading: boolean;
   proposals: ProposalView[];
   escalations: TicketEscalationView[];
   running: boolean;
@@ -74,26 +77,38 @@ export function InvestigationPanel({
   const escalationOnly = route != null && ESCALATION_ONLY_ROUTES.includes(route);
 
   return (
-    <aside className="investigation" aria-label="AI investigation and next steps">
+    <aside className="investigation" aria-label="Investigation and next steps">
       <header className="investigation__head">
-        <h2>Investigation</h2>
+        <div className="investigation__titlewrap">
+          <h2 className="panel-title">Investigation</h2>
+          {meta?.aiProvider === 'mock' && (
+            <span
+              className="demo-badge demo-badge--sm"
+              title="Uses deterministic demo logic over the stored records. No AI model is called, and every result is labeled as a demo result."
+            >
+              Demo AI
+            </span>
+          )}
+        </div>
         {!readOnly && ticket && (
           <button
             type="button"
-            className="btn btn--primary btn--sm"
+            className="btn btn--secondary btn--sm"
             onClick={onRun}
             disabled={running}
             aria-busy={running}
           >
-            {running ? 'Investigating…' : investigation ? 'Re-run' : 'Run investigation'}
+            {running ? 'Running…' : investigation ? 'Re-run' : 'Run investigation'}
           </button>
         )}
       </header>
 
+      {loading && !investigation && ticket && <InvestigationSkeleton />}
+
       {readOnly && (
         <p className="callout callout--info" role="note">
-          <strong>Public read-only preview.</strong> Investigations and approvals are disabled on
-          shared demos — run the stack locally for the full journey.
+          <strong>Read-only demo.</strong> Running investigations and approving changes is
+          disabled here. Run the project locally for the full workflow.
         </p>
       )}
 
@@ -102,28 +117,20 @@ export function InvestigationPanel({
           <div className="run-progress__bar" aria-hidden="true">
             <span className="run-progress__fill" />
           </div>
-          <p>
-            Gathering this ticket&apos;s allowlisted records (read-only) and drafting a verdict.
-            Real progress only — hard limits: ≤ 12 tool calls, ≤ 20 s.
-          </p>
+          <p>Checking the records for this ticket and preparing a recommendation.</p>
         </div>
       )}
 
-      {!investigation && !running && ticket && !readOnly && (
-        <p className="muted">
-          Run an investigation to gather this ticket&apos;s records (read-only) and draft a verdict
-          for your review.
+      {!investigation && !loading && !running && ticket && !readOnly && (
+        <p className="muted investigation__empty">
+          No investigation yet. Run one to review the records and get a recommended action.
         </p>
       )}
-      {!investigation && !running && ticket && readOnly && (
-        <p className="muted">
-          No investigation is attached to this ticket in this demo dataset.
-        </p>
+      {!investigation && !loading && !running && ticket && readOnly && (
+        <p className="muted investigation__empty">No investigation is attached to this ticket.</p>
       )}
 
-      {investigation && (
-        <InvestigationResult investigation={investigation} meta={meta} />
-      )}
+      {investigation && <ResultSections investigation={investigation} />}
 
       {investigation?.status === 'COMPLETED' && !readOnly && (
         <>
@@ -131,9 +138,7 @@ export function InvestigationPanel({
             <EscalationPrimary
               onEscalate={onEscalate}
               escalations={escalations}
-              routeLabel={
-                NEXT_STEP_LABELS[route!] ?? route!
-              }
+              routeLabel={NEXT_STEP_LABELS[route!] ?? route!}
             />
           ) : (
             <ProposalSection
@@ -152,102 +157,78 @@ export function InvestigationPanel({
   );
 }
 
-/* --------------------------------------------------------------- result */
+/* --------------------------------------------------------- result sections */
 
-function InvestigationResult({
-  investigation,
-  meta,
-}: {
-  investigation: InvestigationView;
-  meta: MetaView | null;
-}) {
+function ResultSections({ investigation }: { investigation: InvestigationView }) {
   const failed = investigation.status === 'FAILED';
-  const keyReasons = investigation.supportingEvidence
-    .filter((c) => c.note)
-    .slice(0, 3);
+  const keyReasons = investigation.supportingEvidence.filter((c) => c.note).slice(0, 3);
+
+  if (failed) {
+    return (
+      <article className="result" aria-live="polite">
+        <div className="result__section">
+          <h3 className="result__subhead">Finding</h3>
+          <p className="result__finding">The investigation could not be completed.</p>
+          <p className="callout callout--warning" role="alert">
+            <code>{investigation.failureReason}</code> Nothing was changed anywhere; you can run
+            it again.
+          </p>
+        </div>
+        <TechnicalDetails investigation={investigation} />
+      </article>
+    );
+  }
 
   return (
     <article className="result" aria-live="polite">
-      <div className="result__labels">
-        {investigation.isMock ? (
-          <span className="tag tag--mock" title="Deterministic rules over the seeded records — no AI model was called.">
-            MOCK · no AI model called
-          </span>
-        ) : (
-          <span className="tag tag--real" title="A real model call produced this result.">
-            REAL MODEL · {investigation.provider} / {investigation.model}
-          </span>
-        )}
-        {failed && <span className="tag tag--fail">Failed</span>}
-        <span className="muted result__meta">
-          {formatDateTime(investigation.createdAt)} UTC
-        </span>
+      <div className="result__section">
+        <div className="result__subheadrow">
+          <h3 className="result__subhead">Finding</h3>
+          {investigation.isMock && <span className="result__mocknote">Demo result</span>}
+        </div>
+        <p className="result__finding">{firstSentence(investigation.diagnosis ?? '')}</p>
       </div>
 
-      {failed ? (
-        <p className="callout callout--warning" role="alert">
-          The investigation failed safely (<code>{investigation.failureReason}</code>). Nothing was
-          changed anywhere; you can re-run it.
-        </p>
-      ) : (
-        <>
-          <p className="result__verdict">{investigation.diagnosis}</p>
-
-          <dl className="result__facts">
-            {investigation.uncertainty && (
-              <div>
-                <dt>Uncertainty</dt>
-                <dd>{uncertaintyLabel(investigation.uncertainty)}</dd>
-              </div>
-            )}
-            {investigation.riskCategory && (
-              <div>
-                <dt>Risk</dt>
-                <dd>
-                  <span className={`risk risk--${investigation.riskCategory.toLowerCase()}`}>
-                    {riskLabel(investigation.riskCategory)}
-                  </span>
-                </dd>
-              </div>
-            )}
-          </dl>
-
-          {keyReasons.length > 0 && (
-            <div className="result__reasons">
-              <h3 className="result__subhead">Key reasons</h3>
-              <ul>
-                {keyReasons.map((c) => (
-                  <li key={`${c.recordType}:${c.id}`}>{c.note}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {investigation.proposedNextStep && (
-            <div className="next-step">
-              <h3 className="result__subhead">Next step</h3>
-              <p className="next-step__route">
-                {NEXT_STEP_LABELS[investigation.proposedNextStep.type] ??
-                  investigation.proposedNextStep.type}
-              </p>
-              <p className="next-step__detail">{investigation.proposedNextStep.detail}</p>
-            </div>
-          )}
-
-          <div className="result__draft">
-            <h3 className="result__subhead">Draft reply for your review</h3>
-            <blockquote className="draft">{investigation.draftReply}</blockquote>
-            <p className="muted result__note">Nothing has been sent to anyone.</p>
-          </div>
-
-          <TechnicalDetails investigation={investigation} />
-        </>
+      {keyReasons.length > 0 && (
+        <div className="result__section">
+          <h3 className="result__subhead">Evidence</h3>
+          <ul className="result__reasons">
+            {keyReasons.map((c) => (
+              <li key={`${c.recordType}:${c.id}`}>{c.note}</li>
+            ))}
+          </ul>
+        </div>
       )}
+
+      <div className="result__section">
+        <h3 className="result__subhead">Risk</h3>
+        <p className="result__riskline">
+          <span className={`risk risk--${investigation.riskCategory?.toLowerCase() ?? 'low'}`}>
+            {riskLabel(investigation.riskCategory)}
+          </span>
+          <span className="muted">{uncertaintyLabel(investigation.uncertainty)}</span>
+        </p>
+      </div>
+
+      {investigation.proposedNextStep && (
+        <div className="result__section">
+          <h3 className="result__subhead">Recommended action</h3>
+          <div className="next-step">
+            <p className="next-step__route">
+              {NEXT_STEP_LABELS[investigation.proposedNextStep.type] ??
+                investigation.proposedNextStep.type}
+            </p>
+            <p className="next-step__detail">{investigation.proposedNextStep.detail}</p>
+          </div>
+        </div>
+      )}
+
+      <TechnicalDetails investigation={investigation} />
     </article>
   );
 }
 
-/* --------------------------------------------------- technical details */
+/* ------------------------------------------------------ technical details */
 
 function TechnicalDetails({ investigation }: { investigation: InvestigationView }) {
   return (
@@ -256,25 +237,28 @@ function TechnicalDetails({ investigation }: { investigation: InvestigationView 
         <p className="muted tech__line">
           Provider <code>{investigation.provider}</code> · model <code>{investigation.model}</code>{' '}
           · {investigation.bounds.toolCallsUsed} tool calls · {investigation.bounds.elapsedMs} ms ·
-          output retries {investigation.bounds.outputRetries}
+          finished {formatDateTime(investigation.createdAt)} UTC
         </p>
 
+        <h4>Full analysis</h4>
+        <p className="tech__line">{investigation.diagnosis}</p>
+
         {investigation.policyOverrides.length > 0 && (
-          <div>
-            <h4>Policy overrides applied server-side</h4>
+          <>
+            <h4>Policy overrides applied by the server</h4>
             <ul className="tech__list">
               {investigation.policyOverrides.map((override) => (
                 <li key={override}>{override}</li>
               ))}
             </ul>
-          </div>
+          </>
         )}
 
-        <h4>All cited evidence</h4>
+        <h4>Cited records</h4>
         <CitationList title="Supporting" citations={investigation.supportingEvidence} />
         <CitationList title="Contradicting" citations={investigation.contradictingEvidence} />
 
-        <h4>Tool trace ({investigation.toolTrace.length} calls, redacted)</h4>
+        <h4>Tool trace ({investigation.toolTrace.length} calls)</h4>
         <div className="table-scroll">
           <table className="record-table record-table--compact">
             <thead>
@@ -296,11 +280,9 @@ function TechnicalDetails({ investigation }: { investigation: InvestigationView 
                   </td>
                   <td>{entry.argKeys.length > 0 ? entry.argKeys.join(', ') : 'none'}</td>
                   <td>
-                    {entry.status === 'ok' ? (
-                      `ok (${entry.rowCount ?? 0})`
-                    ) : (
-                      <span title={entry.reason}>rejected — {entry.reason}</span>
-                    )}
+                    {entry.status === 'ok'
+                      ? `ok (${entry.rowCount ?? 0})`
+                      : `rejected: ${entry.reason}`}
                   </td>
                   <td>{entry.rowCount ?? '—'}</td>
                   <td>{entry.durationMs ?? 0}</td>
@@ -311,8 +293,8 @@ function TechnicalDetails({ investigation }: { investigation: InvestigationView 
         </div>
 
         <p className="muted tech__line">
-          The investigation read only this ticket&apos;s allowlisted records. It cannot issue
-          refunds, change accounts, or contact anyone.
+          The investigation read only this ticket's allowlisted records and cannot change
+          accounts, issue refunds, or contact anyone.
         </p>
       </div>
     </Expander>
@@ -330,9 +312,9 @@ function CitationList({ title, citations }: { title: string; citations: Evidence
           {citations.map((c) => (
             <li key={`${c.recordType}:${c.id}`}>
               <code>
-                {c.recordType.toLowerCase()}:{c.id.slice(0, 10)}…
+                {c.recordType.toLowerCase()}:{c.id.slice(0, 10)}
               </code>
-              {c.note && <span className="muted"> — {c.note}</span>}
+              {c.note && <span className="muted"> {c.note}</span>}
             </li>
           ))}
         </ul>
@@ -341,7 +323,7 @@ function CitationList({ title, citations }: { title: string; citations: Evidence
   );
 }
 
-/* ------------------------------------------------------------- actions */
+/* ----------------------------------------------------------------- actions */
 
 function ProposalSection({
   proposals,
@@ -369,13 +351,15 @@ function ProposalSection({
     setHint(null);
     const result = await onCreateProposal();
     if (result?.errorCode) {
-      setHint(PROPOSAL_ERROR_HINTS[result.errorCode] ?? result.message ?? 'The proposal was refused.');
+      setHint(
+        PROPOSAL_ERROR_HINTS[result.errorCode] ?? result.message ?? 'The proposal was refused.',
+      );
     }
   };
 
   return (
-    <section className="actions" aria-label="Action proposal and decision">
-      <h2 className="section-title">Proposed action</h2>
+    <section className="actions" aria-label="Proposed action">
+      <h3 className="actions__title">Proposed action</h3>
 
       {feedback && (
         <p className="callout callout--success" role="status">
@@ -385,13 +369,12 @@ function ProposalSection({
 
       {proposals.length === 0 && (
         <div className="actions__create">
-          <p className="muted">
-            If the records support it, server-side code derives a bounded sandbox action from this
-            investigation — the model cannot create one.
-          </p>
           <button type="button" className="btn btn--primary" onClick={handleCreate}>
-            Derive action proposal
+            Prepare this action
           </button>
+          <p className="muted actions__hint">
+            The server checks the records and prepares the change for your approval.
+          </p>
           {hint && (
             <p className="callout callout--warning" role="status">
               {hint}
@@ -416,7 +399,13 @@ function ProposalSection({
       ))}
 
       <Expander label="Escalate to a human team instead" startOpen={false}>
-        <EscalationForm onEscalate={onEscalate} reviewer={reviewer} passcode={passcode} onReviewer={setReviewer} onPasscode={setPasscode} />
+        <EscalationForm
+          onEscalate={onEscalate}
+          reviewer={reviewer}
+          passcode={passcode}
+          onReviewer={setReviewer}
+          onPasscode={setPasscode}
+        />
         <EscalationHistory escalations={escalations} />
       </Expander>
     </section>
@@ -425,7 +414,6 @@ function ProposalSection({
 
 function ProposalCard({
   proposal,
-  isMock,
   reviewer,
   passcode,
   onReviewer,
@@ -469,8 +457,8 @@ function ProposalCard({
     if (result.ok) {
       onFeedback(
         decision === 'APPROVE'
-          ? 'Approved and applied to the sandbox dataset. Ticket resolved — the center panel shows the updated records.'
-          : `Proposal ${decision === 'REJECT' ? 'rejected' : 'escalated'}. No data was changed.`,
+          ? 'Done. The change was applied and the ticket is resolved.'
+          : `Proposal ${decision === 'REJECT' ? 'rejected' : 'escalated'}. Nothing was changed.`,
       );
       onPasscode('');
     } else {
@@ -484,28 +472,27 @@ function ProposalCard({
   return (
     <article className={`proposal proposal--${proposal.status.toLowerCase()}`}>
       <header className="proposal__head">
-        <span className="proposal__title">{ACTION_TYPE_LABELS[proposal.actionType] ?? proposal.actionType}</span>
+        <span className="proposal__title">
+          {ACTION_TYPE_LABELS[proposal.actionType] ?? proposal.actionType}
+        </span>
         <span className={`tag tag--proposal-${proposal.status.toLowerCase()}`}>
           {PROPOSAL_STATUS_LABELS[proposal.status] ?? proposal.status}
         </span>
       </header>
 
-      {isMock && <p className="muted proposal__note">Derived from a MOCK investigation.</p>}
       <p className="proposal__rationale">{proposal.rationale}</p>
 
       <dl className="proposal__facts">
         <div>
-          <dt>Targets</dt>
+          <dt>Applies to</dt>
           <dd>{describeTargets(proposal)}</dd>
         </div>
         <div>
           <dt>Policy</dt>
-          <dd>
-            <code>{proposal.policyKey}</code> · pinned {formatDateTime(proposal.policyVersion)} UTC
-          </dd>
+          <dd>{proposal.policyKey.replace(/-/g, ' ')}</dd>
         </div>
         <div>
-          <dt>Expires</dt>
+          <dt>Valid until</dt>
           <dd>{formatDateTime(proposal.expiresAt)} UTC</dd>
         </div>
         {proposal.decidedBy && (
@@ -518,56 +505,66 @@ function ProposalCard({
         )}
         {proposal.applyError && (
           <div>
-            <dt>Last failure</dt>
-            <dd>
-              <code>{proposal.applyError}</code> — rolled back (attempt {proposal.failureCount})
-            </dd>
+            <dt>Last attempt</dt>
+            <dd>Failed and rolled back. You can approve again while the proposal is valid.</dd>
           </div>
         )}
       </dl>
 
       {pending && (
         <div className="decision">
-          <label className="field">
-            <span>Reviewer name</span>
-            <input
-              type="text"
-              value={reviewer}
-              maxLength={80}
-              onChange={(e) => onReviewer(e.target.value)}
-              autoComplete="off"
-              placeholder="e.g. Dana Support"
-            />
-          </label>
-          <label className="field">
-            <span>Reviewer passcode</span>
-            <input
-              type="password"
-              value={passcode}
-              onChange={(e) => onPasscode(e.target.value)}
-              autoComplete="off"
-              placeholder="REVIEWER_PASSCODE"
-            />
-          </label>
+          <div className="decision__inputs">
+            <label className="field">
+              <span>Your name</span>
+              <input
+                type="text"
+                value={reviewer}
+                maxLength={80}
+                onChange={(e) => onReviewer(e.target.value)}
+                autoComplete="off"
+                placeholder="e.g. Dana Support"
+              />
+            </label>
+            <label className="field">
+              <span>Passcode</span>
+              <input
+                type="password"
+                value={passcode}
+                onChange={(e) => onPasscode(e.target.value)}
+                autoComplete="off"
+                placeholder="Reviewer passcode"
+              />
+            </label>
+          </div>
           <div className="decision__buttons">
-            <button type="button" className="btn btn--approve" disabled={busy} onClick={() => decide('APPROVE')}>
+            <button
+              type="button"
+              className="btn btn--approve"
+              disabled={busy}
+              onClick={() => decide('APPROVE')}
+            >
               {busy ? 'Working…' : DECISION_LABELS.APPROVE}
             </button>
-            <button type="button" className="btn btn--danger" disabled={busy} onClick={() => decide('REJECT')}>
+            <button
+              type="button"
+              className="btn btn--danger"
+              disabled={busy}
+              onClick={() => decide('REJECT')}
+            >
               {DECISION_LABELS.REJECT}
             </button>
-            <button type="button" className="btn btn--secondary" disabled={busy} onClick={() => decide('ESCALATE')}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              disabled={busy}
+              onClick={() => decide('ESCALATE')}
+            >
               {DECISION_LABELS.ESCALATE}
             </button>
           </div>
-          <p className="muted decision__note">
-            Approving re-validates expiry, record versions, policy version, and account ownership
-            in one database transaction before applying. Only entitlement repair and
-            duplicate-invoice correction exist.
-          </p>
           {!authConfigured && (
             <p className="muted decision__note">
-              Reviewer auth is not configured on the API — decisions will currently be refused.
+              No reviewer passcode is configured on this deployment, so decisions are refused.
             </p>
           )}
         </div>
@@ -580,12 +577,15 @@ function ProposalCard({
       )}
 
       <Expander label="Audit history" startOpen={false} onToggle={loadAudits}>
-        {audits === null && <p className="muted">Loading audit trail…</p>}
-        {audits !== null && audits.length === 0 && <p className="muted">No audit entries.</p>}
+        {audits === null && <p className="muted">Loading…</p>}
+        {audits !== null && audits.length === 0 && <p className="muted">No entries.</p>}
         {audits !== null && audits.length > 0 && (
           <ol className="audit">
             {audits.map((audit) => (
-              <li key={audit.id} className={`audit__item audit__item--${audit.event.toLowerCase()}`}>
+              <li
+                key={audit.id}
+                className={`audit__item audit__item--${audit.event.toLowerCase()}`}
+              >
                 <span className="audit__dot" aria-hidden="true" />
                 <div>
                   <strong>{AUDIT_EVENT_LABELS[audit.event] ?? audit.event}</strong>
@@ -593,7 +593,9 @@ function ProposalCard({
                   <span className="muted"> · {formatDateTime(audit.createdAt)} UTC</span>
                   {audit.detail?.before !== undefined && audit.detail?.after !== undefined && (
                     <pre className="audit__diff">
-                      {`before ${JSON.stringify(audit.detail.before)}\nafter  ${JSON.stringify(audit.detail.after)}`}
+                      {`before ${JSON.stringify(audit.detail.before)}\nafter  ${JSON.stringify(
+                        audit.detail.after,
+                      )}`}
                     </pre>
                   )}
                   {typeof audit.detail?.reason === 'string' && (
@@ -609,7 +611,7 @@ function ProposalCard({
   );
 }
 
-/* ---------------------------------------------------------- escalation */
+/* -------------------------------------------------------------- escalation */
 
 function EscalationPrimary({
   onEscalate,
@@ -622,10 +624,10 @@ function EscalationPrimary({
 }) {
   return (
     <section className="actions actions--escalation" aria-label="Escalation">
-      <h2 className="section-title">Next step</h2>
+      <h3 className="actions__title">Escalate this ticket</h3>
       <p className="actions__lede">
-        This route has <strong>no sandbox action</strong>: {routeLabel} is the only permitted
-        outcome, and escalation never changes account data.
+        {routeLabel} is the only permitted outcome for this ticket. Escalation hands it to the
+        right team and never changes account data.
       </p>
       <EscalationForm onEscalate={onEscalate} />
       <EscalationHistory escalations={escalations} />
@@ -650,10 +652,9 @@ function EscalationForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const [name, setName] = useState(reviewer ?? '');
-  const [code, setCode] = useState(passcode ?? '');
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
 
-  // Share identity state with proposal decisions when the parent controls it.
   const reviewerValue = onReviewer ? (reviewer ?? '') : name;
   const passcodeValue = onPasscode ? (passcode ?? '') : code;
 
@@ -674,27 +675,29 @@ function EscalationForm({
 
   return (
     <div className="escalation-form">
-      <label className="field">
-        <span>Reviewer name</span>
-        <input
-          type="text"
-          value={reviewerValue}
-          maxLength={80}
-          onChange={(e) => (onReviewer ? onReviewer(e.target.value) : setName(e.target.value))}
-          autoComplete="off"
-          placeholder="e.g. Dana Support"
-        />
-      </label>
-      <label className="field">
-        <span>Reviewer passcode</span>
-        <input
-          type="password"
-          value={passcodeValue}
-          onChange={(e) => (onPasscode ? onPasscode(e.target.value) : setCode(e.target.value))}
-          autoComplete="off"
-          placeholder="REVIEWER_PASSCODE"
-        />
-      </label>
+      <div className="decision__inputs">
+        <label className="field">
+          <span>Your name</span>
+          <input
+            type="text"
+            value={reviewerValue}
+            maxLength={80}
+            onChange={(e) => (onReviewer ? onReviewer(e.target.value) : setName(e.target.value))}
+            autoComplete="off"
+            placeholder="e.g. Dana Support"
+          />
+        </label>
+        <label className="field">
+          <span>Passcode</span>
+          <input
+            type="password"
+            value={passcodeValue}
+            onChange={(e) => (onPasscode ? onPasscode(e.target.value) : setCode(e.target.value))}
+            autoComplete="off"
+            placeholder="Reviewer passcode"
+          />
+        </label>
+      </div>
       <label className="field">
         <span>Note (optional)</span>
         <input
@@ -707,7 +710,7 @@ function EscalationForm({
         />
       </label>
       <button type="button" className="btn btn--secondary" disabled={busy} onClick={escalate}>
-        {busy ? 'Escalating…' : done ? 'Escalated — add another' : 'Escalate to human team'}
+        {busy ? 'Escalating…' : done ? 'Escalated' : 'Escalate to human team'}
       </button>
       {error && (
         <p className="callout callout--warning" role="alert">
@@ -725,29 +728,32 @@ function EscalationHistory({ escalations }: { escalations: TicketEscalationView[
       {escalations.map((e) => (
         <li key={e.id}>
           <strong>{e.escalatedBy}</strong>
-          {e.note && <span> — {e.note}</span>}
-          <span className="muted"> · {formatDateTime(e.createdAt)} UTC</span>
+          {e.note && <span> · {e.note}</span>}
+          <span className="muted"> · {formatDate(e.createdAt)}</span>
         </li>
       ))}
     </ul>
   );
 }
 
-/* -------------------------------------------------------------- helpers */
+/* ----------------------------------------------------------------- helpers */
 
 function describeTargets(proposal: ProposalView): string {
   const p = proposal.payload;
   if (proposal.actionType === 'ENTITLEMENT_REPAIR') {
-    return `subscription ${short(p.subscriptionId)} → ACTIVE for the paid period (charge ${short(p.paymentId)}, invoice ${short(p.invoiceId)})`;
+    return 'the canceled subscription, for the period that was paid';
   }
-  return `void duplicate invoice ${short(p.duplicateInvoiceId)}; keep ${short(p.canonicalInvoiceId)} and charge ${short(p.paymentId)}`;
+  return 'the later of the two duplicate invoices';
 }
 
-function short(id: string | undefined): string {
-  return id ? id.slice(0, 8) + '…' : '—';
+function firstSentence(text: string): string {
+  const trimmed = text.trim();
+  const match = /^.*?[.!?](?:\s|$)/s.exec(trimmed);
+  return match ? match[0].trim() : trimmed;
 }
 
-function uncertaintyLabel(value: string): string {
+function uncertaintyLabel(value: string | null): string {
+  if (!value) return '';
   const map: Record<string, string> = {
     CONFIRMED: 'Confirmed from records',
     LIKELY: 'Likely',
@@ -757,12 +763,13 @@ function uncertaintyLabel(value: string): string {
   return map[value] ?? value;
 }
 
-function riskLabel(value: string): string {
+function riskLabel(value: string | null): string {
+  if (!value) return '';
   const map: Record<string, string> = {
     LOW: 'Low',
     MEDIUM: 'Medium',
     HIGH: 'High',
-    URGENT: 'Urgent — escalate',
+    URGENT: 'Urgent',
   };
   return map[value] ?? value;
 }

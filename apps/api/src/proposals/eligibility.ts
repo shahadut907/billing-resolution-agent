@@ -80,8 +80,7 @@ export function evaluateEligibility(
       eligible: false,
       code: 'escalation_only',
       reason:
-        'reported cross-account exposure allows escalation only — no account mutation is ' +
-        'permitted for this route',
+        'This ticket route allows escalation only. No account change can be proposed for it.',
     };
   }
 
@@ -93,8 +92,7 @@ export function evaluateEligibility(
       eligible: false,
       code: 'escalation_only',
       reason:
-        'ambiguous double-charge reports route to financial review — no mutation and no ' +
-        'refund may be proposed without confirmed evidence',
+        'Ambiguous charge reports route to financial review. No change or refund can be proposed without confirmed evidence.',
     };
   }
 
@@ -129,8 +127,8 @@ export function evaluateEligibility(
     code: 'not_eligible',
     reason:
       `no executable action exists for scenario ${records.scenario} with proposed next step ` +
-      `${records.proposedNextStepType ?? 'none'} — only entitlement repair and duplicate-invoice ` +
-      'correction on matching scenarios can be proposed',
+      `${records.proposedNextStepType ?? 'none'}. Only entitlement repair and duplicate invoice ` +
+      'correction can be proposed, on their matching scenarios.',
   };
 }
 
@@ -143,7 +141,7 @@ function evaluateEntitlementRepair(
     return {
       eligible: false,
       code: 'not_eligible',
-      reason: 'no CANCELED subscription found on the reporter account — nothing to repair',
+      reason: 'No canceled subscription was found on this account, so there is nothing to repair.',
     };
   }
   const coveringPayment = records.payments.find(
@@ -157,8 +155,7 @@ function evaluateEntitlementRepair(
       eligible: false,
       code: 'not_eligible',
       reason:
-        'no successful payment falls inside the canceled subscription\'s current period — ' +
-        'entitlement repair requires paid coverage of the period',
+        'No successful payment falls within the canceled subscription\'s current period, so the repair is not supported.',
     };
   }
   const paidInvoice = records.invoices.find(
@@ -168,7 +165,7 @@ function evaluateEntitlementRepair(
     return {
       eligible: false,
       code: 'not_eligible',
-      reason: 'no PAID invoice references the covering payment — evidence incomplete',
+      reason: 'No paid invoice references the covering payment, so the evidence is incomplete.',
     };
   }
 
@@ -191,9 +188,9 @@ function evaluateEntitlementRepair(
     actionType: 'ENTITLEMENT_REPAIR',
     payload,
     rationale:
-      'Records show a successful payment covering the canceled subscription\'s current period ' +
-      'with a matching paid invoice. The permitted action sets the subscription back to ACTIVE ' +
-      'for that period. Nothing else is changed.',
+      'A successful payment covers the canceled subscription\'s current period, with a matching ' +
+      'paid invoice. The permitted action sets the subscription back to ACTIVE for that period. ' +
+      'Nothing else changes.',
     recordVersions,
   };
 }
@@ -232,11 +229,11 @@ function evaluateDuplicateInvoiceCorrection(
       payload,
       rationale: amountsConsistent
         ? `Two or more paid invoices reference the same successful charge. The permitted action ` +
-          `voids the later duplicate invoice (${sorted.length} invoices share the charge); the ` +
-          'earliest invoice and the payment record stand. No refund is issued.'
+          `voids the later duplicate invoice (${sorted.length} invoices share the charge). The ` +
+          'earliest invoice and the payment record stay as they are. No refund is issued.'
         : `Two or more paid invoices reference the same successful charge with inconsistent ` +
-          'amounts — flagging for review. The permitted action voids the later duplicate ' +
-          'invoice; no refund is issued.',
+          'amounts, so this needs review. The permitted action voids the later duplicate ' +
+          'invoice. No refund is issued.',
       recordVersions: {
         [versionKey('INVOICE', duplicate.id)]: versions[versionKey('INVOICE', duplicate.id)],
         [versionKey('INVOICE', canonical.id)]: versions[versionKey('INVOICE', canonical.id)],
@@ -249,7 +246,6 @@ function evaluateDuplicateInvoiceCorrection(
     eligible: false,
     code: 'not_eligible',
     reason:
-      'no successful charge is referenced by two or more paid invoices — the reported ' +
-      'duplicate cannot be confirmed from the records',
+      'No successful charge is referenced by two or more paid invoices, so the reported duplicate cannot be confirmed.',
   };
 }

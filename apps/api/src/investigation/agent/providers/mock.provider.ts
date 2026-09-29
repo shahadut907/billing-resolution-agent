@@ -82,6 +82,14 @@ function collectEvidence(messages: AgentMessage[]): EvidencePack {
 
 const money = (value: unknown): string => Number(value).toFixed(2);
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDate = (value: unknown): string => {
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime())
+    ? String(value ?? 'unknown date')
+    : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+};
+
 const cite = (
   recordType: 'TICKET' | 'ACCOUNT' | 'SUBSCRIPTION' | 'PAYMENT' | 'INVOICE' | 'POLICY',
   id: string | undefined,
@@ -104,10 +112,10 @@ function buildMockVerdict(pack: EvidencePack): Record<string, unknown> {
     const policy = pack.policies.find((p) => String(p.key).startsWith('paid-plan'));
     return {
       diagnosis:
-        `Records show a successful payment of $${money(paid?.amount)} on ${String(paid?.occurredAt)} ` +
-        `covering the current period, while the subscription "${String(canceled?.planName)}" is CANCELED` +
-        `${canceled?.canceledAt ? ` (canceled at ${String(canceled?.canceledAt)})` : ''}. ` +
-        `The reported mismatch is supported by the persisted records; the cause of the cancellation is not visible in the records.`,
+        `Records show a successful card payment of $${money(paid?.amount)} on ${fmtDate(paid?.occurredAt)} ` +
+        `covering the current period, while the subscription "${String(canceled?.planName)}" was canceled` +
+        `${canceled?.canceledAt ? ` on ${fmtDate(canceled?.canceledAt)}` : ''}. ` +
+        `The records match the customer's report; they do not show why the cancellation happened.`,
       supportingEvidence: [
         cite('PAYMENT', paid?.id as string | undefined, 'successful payment covering the current period'),
         cite('INVOICE', paidInvoice?.id as string | undefined, 'paid invoice for the same period'),
@@ -120,7 +128,7 @@ function buildMockVerdict(pack: EvidencePack): Record<string, unknown> {
       proposedNextStep: {
         type: 'PLATFORM_OPS_REACTIVATION',
         detail:
-          'Verify the payment coverage and escalate to Platform Operations for a reactivation review per the paid-plan-reactivation policy. No account changes are made by this investigation.',
+          'Verify the payment coverage, then hand to Platform Operations for a reactivation review within one business day. This investigation changed nothing.',
       },
       draftReply:
         'Thank you for your report. Our records show a successful payment covering the current period while the subscription is inactive. We are verifying the payment and subscription records and will escalate to Platform Operations for a reactivation review within one business day. No changes have been made to your account yet; we will update this ticket with the outcome.',
@@ -141,7 +149,7 @@ function buildMockVerdict(pack: EvidencePack): Record<string, unknown> {
     return {
       diagnosis:
         duplicate
-          ? `Invoices ${String(first?.number)} and ${String(second?.number)} both reference the same successful charge ${String(charge?.ref)} of $${money(charge?.amount)}. The persisted records support the reported duplicate invoicing.`
+          ? `Invoices ${String(first?.number)} and ${String(second?.number)} both map to the same successful card charge of $${money(charge?.amount)} from ${fmtDate(charge?.occurredAt)}. The records support the reported duplicate invoice.`
           : 'No duplicate invoice group was found in the persisted records.',
       supportingEvidence: [
         cite('PAYMENT', charge?.id as string | undefined, 'single successful charge referenced by both invoices'),
@@ -155,7 +163,7 @@ function buildMockVerdict(pack: EvidencePack): Record<string, unknown> {
       proposedNextStep: {
         type: 'DUPLICATE_INVOICE_VERIFICATION',
         detail:
-          'A billing analyst should verify the charge against both invoices and correct the duplicate invoice if confirmed. No invoices are voided and no refunds are issued by this investigation.',
+          'A billing analyst should confirm the charge against both invoices and void the duplicate. This investigation changed nothing.',
       },
       draftReply:
         'Thank you for flagging this. Our records show two invoices referencing the same successful charge. A billing analyst will verify the charge and correct the duplicate invoice if it is confirmed. No changes have been made to your account or invoices yet; we will update this ticket with the outcome.',
@@ -166,7 +174,7 @@ function buildMockVerdict(pack: EvidencePack): Record<string, unknown> {
     const policy = pack.policies.find((p) => String(p.key).startsWith('cross-account'));
     return {
       diagnosis:
-        'The ticket reports that the customer could see another organization\'s billing records, and the ticket links a related account. The related account\'s records were deliberately not retrieved. Billing records can confirm the report was filed and how policy routes it — they cannot confirm whether data was actually exposed, so this is treated as a potential privacy incident requiring urgent security escalation.',
+        'The customer reports seeing another organization\'s billing records in their account, and the ticket links a related account whose records were deliberately not retrieved. Billing records confirm the report and how policy routes it, but cannot confirm whether data was actually exposed. Company policy treats this as a potential privacy incident requiring urgent security escalation.',
       supportingEvidence: [
         cite('TICKET', ticketId, 'customer report of cross-account data exposure'),
         cite('POLICY', policy?.id as string | undefined, 'policy covering cross-account exposure reports'),
@@ -177,7 +185,7 @@ function buildMockVerdict(pack: EvidencePack): Record<string, unknown> {
       proposedNextStep: {
         type: 'SECURITY_ESCALATION',
         detail:
-          'Escalate to the security on-call within one hour per the cross-account-exposure policy. Preserve the records as reported and do not disclose the other account\'s details to the reporter while triaging. This investigation made no changes.',
+          'Escalate to the security on-call within one hour. Preserve the records as reported and do not disclose the other account to the reporter while triaging. This investigation changed nothing.',
       },
       draftReply:
         'Thank you for reporting this. We treat reports of seeing another organization\'s billing data as potential privacy incidents and handle them with the highest priority. A security specialist will review access to your account and investigate how this happened. We will not share details about other accounts during the review, and nothing has been changed on your account yet.',
@@ -196,7 +204,7 @@ function buildMockVerdict(pack: EvidencePack): Record<string, unknown> {
     return {
       diagnosis:
         first && second
-          ? `Two successful payments of $${money(first.amount)} and $${money(second.amount)} occurred on ${String(first.occurredAt)} and ${String(second.occurredAt)}. Each maps to a distinct invoice for the same billing period, so the records alone cannot confirm whether one charge is a duplicate.`
+          ? `Two successful card payments of $${money(first.amount)} were made on ${fmtDate(first.occurredAt)} and ${fmtDate(second.occurredAt)}. Each maps to a separate invoice for the same billing period, so the records cannot confirm a duplicate.`
           : 'Fewer than two successful payments were found in the persisted records.',
       supportingEvidence: [
         cite('PAYMENT', first?.id as string | undefined, 'first successful charge'),
@@ -214,7 +222,7 @@ function buildMockVerdict(pack: EvidencePack): Record<string, unknown> {
       proposedNextStep: {
         type: 'FINANCIAL_REVIEW',
         detail:
-          'Route to financial review: a senior billing analyst must compare the payment references and billing periods before deciding whether a duplicate exists. No refund is issued by this investigation.',
+          'Route to financial review. A senior billing analyst must compare the payment references before deciding whether a duplicate exists. This investigation issued no refund and changed nothing.',
       },
       draftReply:
         'Thank you for your report. Our records show two similar charges close together, and each maps to a separate invoice, so we cannot yet confirm whether one of them is a duplicate. This ticket has been routed to financial review, where a senior billing analyst will compare the payment references. No corrections have been made yet; we will update this ticket with the outcome.',
