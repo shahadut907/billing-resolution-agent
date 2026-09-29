@@ -8,7 +8,8 @@
     "start": "node dist/main.js",
     "test": "jest",
     "test:e2e": "dotenv -e ../../.env -- jest --config ./test/jest-e2e.json --runInBand",
-    "eval": "tsx src/evaluation/run-evaluation.ts"
+    "eval": "tsx src/evaluation/run-evaluation.ts",
+    "setup:demo": "tsx src/setup/seed-demo-investigations.ts"
   },
   "dependencies": {
     "@billing-resolution/db": "workspace:*",

@@ -3,9 +3,10 @@
 # Apply via: Render dashboard → New + → Blueprint → select this repository.
 # Fill in the two prompted values (sync: false) during apply:
 #   DATABASE_URL  — the Neon free-plan connection string (sslmode=require)
-#   API_BASE_URL  — https://<api-service-host>.onrender.com/api  (shown after
-#                   the API service is created; re-apply/save the web env var
-#                   then)
+#   API_BASE_URL  — leave blank at apply time; after deploy, copy the URL
+#                   Render ACTUALLY assigned to the api service (from its
+#                   service page header) and set the web service's
+#                   API_BASE_URL to that URL with /api appended.
 #
 # The public demo configuration is fixed here by design:
 #   PUBLIC_READ_ONLY=1  → every mutating endpoint answers 403

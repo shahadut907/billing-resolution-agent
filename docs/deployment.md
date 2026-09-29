@@ -26,34 +26,58 @@ Supabase (Postgres). Anything that runs a Node 20 process and exposes
 
 ## Steps (human, with account access)
 
+### Keeping the database URL out of shell history
+
+The migration/seed/demo-setup commands below read the database URL from
+`.env.remote` — a git-ignored file — instead of a shell variable, so the
+secret never lands in command history, terminal scrollback, or logs:
+
+1. In the repository root, create `.env.remote` with a text editor (NOT
+   `echo`) containing a single line:
+
+   ```
+   DATABASE_URL=postgresql://…your-neon-connection-string…
+   ```
+
+2. `.gitignore` already excludes `.env.*`; confirm with
+   `git check-ignore .env.remote`. Never commit this file, never paste its
+   value into a shell command or a screenshot.
+3. Run the commands in step 3 — they pick the URL up from that file.
+4. When done, you can keep the file for re-runs (idempotent) or delete it:
+   `rm .env.remote` — or `shred -u .env.remote` to overwrite before removal.
+
 ### Fast path: Render Blueprint (recommended)
 
 The repository ships a [`render.yaml`](../render.yaml) Blueprint that defines
 both services with the public-demo configuration fixed (mock provider,
 `PUBLIC_READ_ONLY=1`, no reviewer passcode, health check on `/api/health`):
 
-1. Create the Neon database (step 1 below) and copy the connection string.
+1. Create the Neon database (step 1 below) and put its connection string into
+   `.env.remote` as described above.
 2. Sign in at render.com **with GitHub** → dashboard → **New +** →
    **Blueprint** → select this repository → **Apply**.
 3. Render prompts for two values (they are marked `sync: false` in the
    blueprint):
    - `DATABASE_URL` → paste the Neon connection string.
-   - `API_BASE_URL` → after the first deploy, open the **api** service page,
-     copy its `onrender.com` URL, and set
-     `API_BASE_URL = https://<api-host>.onrender.com/api` on the **web**
-     service (Environment tab) — then **Manual Deploy** the web service once.
-4. Run migrations + seed once against Neon (step 3 below) — the schema is
-   empty until you do.
-5. Verify: `https://<web-host>/` shows the workspace with the public
-   read-only banner; `https://<api-host>/api/health` returns
-   `{"status":"ok","database":true}`.
+   - `API_BASE_URL` → leave blank for now; it needs the URL Render actually
+     assigns to the API service (step 4).
+4. After the services deploy: open the **billing-resolution-api** service
+   page and copy the URL Render assigned it from the header (for a free
+   service it looks like `https://<random-or-name>.onrender.com`) — do not
+   assume it from the service name. Set the **web** service's
+   `API_BASE_URL` environment variable to that URL with `/api` appended
+   (Environment tab → Save) — the web service redeploys.
+5. Run migrations + seed + demo investigations against Neon (step 3 below) —
+   the schema is empty until you do.
+6. Verify (step 6 below): the workspace shows each ticket with its persisted
+   MOCK investigation; mutations return `403`.
 
 ### Manual path (what the blueprint automates)
 
 ### 1. Create the Neon database
 
 1. Sign up at neon.com → create a project.
-2. Copy the pooled connection string → this is `DATABASE_URL`
+2. Copy the connection string → this is `DATABASE_URL`
    (`postgresql://USER:PASSWORD@HOST/DB?sslmode=require`).
 3. The database starts empty; migrations create the schema (step 3).
 
@@ -65,16 +89,21 @@ This repo's commits are local until authenticated:
 git push origin main     # from an authenticated terminal
 ```
 
-### 3. Run migrations + seed once
+### 3. Create the schema, seed, and demo investigations
 
-From your machine (or a Render one-off job) against the Neon URL:
+With `.env.remote` in place (see "Keeping the database URL out of shell
+history" above), run:
 
 ```bash
-DATABASE_URL="postgres://..." pnpm --filter @billing-resolution/db db:deploy
-DATABASE_URL="postgres://..." pnpm --filter @billing-resolution/db db:seed
+pnpm db:deploy:remote     # applies Prisma migrations
+pnpm db:seed:remote       # seeds the synthetic dataset (idempotent)
+pnpm demo:setup:remote    # runs the bounded MOCK investigation pipeline for all four tickets (idempotent)
 ```
 
-Both are idempotent — re-running is safe.
+All three are idempotent — re-running is safe. The demo-investigation step
+runs the existing agent pipeline end to end (mock provider → scoped tools →
+validation → policy overrides → persistence) and labels every result
+`provider="mock"` / `isMock=true`. It never calls a real model.
 
 ### 4. Create the API service on Render
 
@@ -93,20 +122,25 @@ Both are idempotent — re-running is safe.
 ### 5. Create the web service on Render
 
 - New Web Service → same repo.
-- Runtime: Node · Build: `pnpm install && pnpm --filter @billing-resolution/web build`
-  · Start: `node apps/web/node_modules/.bin/next start -p $PORT` (run from repo
-  root).
+- Runtime: Node · Build: `corepack enable && pnpm install --frozen-lockfile`
+  · Start: `node apps/web/node_modules/.bin/next start -p $PORT` (run from
+  repo root).
 - Environment:
-  - `API_BASE_URL` = the API service's internal/public URL + `/api`
-    (e.g. `https://<api-service>.onrender.com/api`)
+  - `API_BASE_URL` = the URL Render actually assigned to the API service
+    (copy it from the api service's page) with `/api` appended — e.g.
+    `https://<assigned-host>.onrender.com/api`. Do not guess it.
   - `NODE_ENV` = `production`
 - The `/backend/*` rewrite proxies browser traffic through the web server, so
   the browser only ever talks same-origin.
 
 ### 6. Verify
 
-- `https://<web-service>/` renders the workspace (read-only banner visible).
-- `https://<api-service>/api/health` → `{"status":"ok","database":true}`.
+- `https://<web-host>/` renders the workspace; every ticket shows a
+  persisted investigation labeled **MOCK · no AI model called** with cited
+  evidence and a redacted tool trace.
+- `https://<api-host>/api/health` → `{"status":"ok","database":true}`.
+- `https://<api-host>/api/meta` → `publicReadOnly:true`,
+  `reviewerAuthConfigured:false`, `aiProvider:"mock"`.
 - Attempting `POST /api/tickets/:id/investigation` on the public API returns
   `403 public_read_only`.
 
