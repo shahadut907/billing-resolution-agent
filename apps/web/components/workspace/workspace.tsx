@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type {
   InvestigationView,
   MetaView,
@@ -23,10 +23,9 @@ export interface WorkspaceProps {
 type LoadState = 'idle' | 'loading' | 'error';
 
 /**
- * Three-panel support workspace: tickets (left), ticket + billing evidence
- * (center), AI investigation + approval (right). Panels stack on narrow
- * screens. Every displayed state comes from the real API — there are no
- * decorative metrics and no simulated AI activity.
+ * Support workspace: tickets (left), case summary + evidence (center),
+ * investigation and permitted next step (right). One shared page scroll —
+ * no independently scrolling panels.
  */
 export function Workspace({ initialTickets, meta }: WorkspaceProps) {
   const [tickets, setTickets] = useState<TicketSummary[] | null>(initialTickets);
@@ -39,7 +38,6 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
   const [running, setRunning] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const listRef = useRef<HTMLDivElement>(null);
 
   const selectTicket = useCallback((id: string, updateUrl: boolean) => {
     setSelectedId(id);
@@ -98,7 +96,7 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
     try {
       setTickets(await clientApi.tickets());
     } catch {
-      // The list is refreshed opportunistically; failures surface elsewhere.
+      // Refreshed opportunistically; failures surface elsewhere.
     }
   }, []);
 
@@ -143,11 +141,7 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
       passcode: string,
     ) => {
       try {
-        const result = await clientApi.decide(proposalId, {
-          decision,
-          reviewer,
-          passcode,
-        });
+        const result = await clientApi.decide(proposalId, { decision, reviewer, passcode });
         setProposals((current) =>
           current.map((p) => (p.id === proposalId ? result.proposal : p)),
         );
@@ -194,29 +188,43 @@ export function Workspace({ initialTickets, meta }: WorkspaceProps) {
   }, []);
 
   return (
-    <div className="workspace" ref={listRef}>
+    <>
       <a href="#ticket-detail" className="skip-link">
         Skip to ticket detail
       </a>
-      <TicketList
-        tickets={tickets}
-        selectedId={selectedId}
-        onSelect={(id) => selectTicket(id, true)}
-        onRetry={retryConnection}
-      />
-      <TicketDetailPanel detail={detail} state={detailState} banner={banner} />
-      <InvestigationPanel
-        ticket={detail?.ticket ?? null}
-        investigation={investigation}
-        proposals={proposals}
-        escalations={escalations}
-        running={running}
-        onRun={runInvestigation}
-        onCreateProposal={createProposal}
-        onDecide={decide}
-        onEscalate={escalate}
-        meta={meta}
-      />
-    </div>
+      <div className="toolbar" role="note">
+        <span className="toolbar__item">
+          Sandbox data — all records are synthetic; applied changes only ever touch this dataset
+        </span>
+        <span className="toolbar__item toolbar__item--right">
+          {meta
+            ? meta.aiProvider === 'mock'
+              ? 'AI: mock — no model is called'
+              : `AI: ${meta.aiProvider}`
+            : ''}
+        </span>
+      </div>
+      <div className="workspace">
+        <TicketList
+          tickets={tickets}
+          selectedId={selectedId}
+          onSelect={(id) => selectTicket(id, true)}
+          onRetry={retryConnection}
+        />
+        <TicketDetailPanel detail={detail} state={detailState} banner={banner} />
+        <InvestigationPanel
+          ticket={detail?.ticket ?? null}
+          investigation={investigation}
+          proposals={proposals}
+          escalations={escalations}
+          running={running}
+          onRun={runInvestigation}
+          onCreateProposal={createProposal}
+          onDecide={decide}
+          onEscalate={escalate}
+          meta={meta}
+        />
+      </div>
+    </>
   );
 }

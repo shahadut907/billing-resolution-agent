@@ -166,13 +166,13 @@ function buildMockVerdict(pack: EvidencePack): Record<string, unknown> {
     const policy = pack.policies.find((p) => String(p.key).startsWith('cross-account'));
     return {
       diagnosis:
-        'The ticket reports that the customer could see another organization\'s billing records, and the ticket links a related account. The related account\'s records were deliberately not retrieved. Per company policy this is treated as a potential privacy incident requiring urgent security escalation.',
+        'The ticket reports that the customer could see another organization\'s billing records, and the ticket links a related account. The related account\'s records were deliberately not retrieved. Billing records can confirm the report was filed and how policy routes it — they cannot confirm whether data was actually exposed, so this is treated as a potential privacy incident requiring urgent security escalation.',
       supportingEvidence: [
         cite('TICKET', ticketId, 'customer report of cross-account data exposure'),
         cite('POLICY', policy?.id as string | undefined, 'policy covering cross-account exposure reports'),
       ],
       contradictingEvidence: [],
-      uncertainty: 'CONFIRMED',
+      uncertainty: 'UNRESOLVABLE',
       riskCategory: 'URGENT',
       proposedNextStep: {
         type: 'SECURITY_ESCALATION',

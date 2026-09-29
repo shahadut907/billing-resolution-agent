@@ -19,9 +19,8 @@ import {
   NEXT_STEP_LABELS,
   PROPOSAL_ERROR_HINTS,
   PROPOSAL_STATUS_LABELS,
-  RISK_LABELS,
-  UNCERTAINTY_LABELS,
 } from '../../lib/labels';
+import { Expander } from './expander';
 
 type DecideFn = (
   proposalId: string,
@@ -39,6 +38,13 @@ type EscalateFn = (
 type CreateProposalFn = () => Promise<
   { id?: string; errorCode?: string; message?: string } | null
 >;
+
+/**
+ * Routes whose investigation outcome can never be executed by the sandbox.
+ * For these, escalation is the primary (only) action and no proposal is
+ * offered — mirroring the server-side eligibility rules.
+ */
+const ESCALATION_ONLY_ROUTES = ['SECURITY_ESCALATION', 'FINANCIAL_REVIEW', 'CHARGE_VERIFICATION'];
 
 export function InvestigationPanel({
   ticket,
@@ -63,35 +69,23 @@ export function InvestigationPanel({
   onEscalate: EscalateFn;
   meta: MetaView | null;
 }) {
-  const [reviewer, setReviewer] = useState('');
-  const [passcode, setPasscode] = useState('');
-  const [escalationOnlyHint, setEscalationOnlyHint] = useState<string | null>(null);
-  const [decisionFeedback, setDecisionFeedback] = useState<string | null>(null);
   const readOnly = meta?.publicReadOnly === true;
-
-  const handleCreateProposal = async () => {
-    setEscalationOnlyHint(null);
-    const result = await onCreateProposal();
-    if (result?.errorCode) {
-      setEscalationOnlyHint(
-        PROPOSAL_ERROR_HINTS[result.errorCode] ?? result.message ?? 'The proposal was refused.',
-      );
-    }
-  };
+  const route = investigation?.status === 'COMPLETED' ? investigation.proposedNextStep?.type : null;
+  const escalationOnly = route != null && ESCALATION_ONLY_ROUTES.includes(route);
 
   return (
-    <aside className="panel glass investigation-panel" aria-label="AI investigation and approval">
-      <header className="investigation-panel__head">
-        <h2>AI investigation</h2>
+    <aside className="investigation" aria-label="AI investigation and next steps">
+      <header className="investigation__head">
+        <h2>Investigation</h2>
         {!readOnly && ticket && (
           <button
             type="button"
-            className="btn btn--primary"
+            className="btn btn--primary btn--sm"
             onClick={onRun}
             disabled={running}
             aria-busy={running}
           >
-            {running ? 'Investigating…' : investigation ? 'Re-run investigation' : 'Run investigation'}
+            {running ? 'Investigating…' : investigation ? 'Re-run' : 'Run investigation'}
           </button>
         )}
       </header>
@@ -99,30 +93,7 @@ export function InvestigationPanel({
       {readOnly && (
         <p className="callout callout--info" role="note">
           <strong>Public read-only preview.</strong> Investigations and approvals are disabled on
-          shared demos. Run the stack locally to walk the full journey.
-        </p>
-      )}
-
-      {meta && !investigation && !running && (
-        <p className="ai-mode-label" role="note">
-          {meta.aiProvider === 'mock' ? (
-            <>
-              <strong>AI mode: MOCK</strong> — investigations use deterministic rules over the
-              seeded records. No AI model is called, and every result is labeled as mock.
-            </>
-          ) : (
-            <>
-              <strong>AI mode: configured provider</strong> (<code>{meta.aiProvider}</code>) —
-              investigations will make real model calls and are labeled per run.
-            </>
-          )}
-        </p>
-      )}
-
-      {meta && !meta.reviewerAuthConfigured && !readOnly && (
-        <p className="callout callout--warning" role="note">
-          Reviewer authentication is not configured (no <code>REVIEWER_PASSCODE</code>). Approval
-          controls are shown but every decision will be refused until you set it.
+          shared demos — run the stack locally for the full journey.
         </p>
       )}
 
@@ -132,289 +103,323 @@ export function InvestigationPanel({
             <span className="run-progress__fill" />
           </div>
           <p>
-            Running the bounded investigation — gathering this ticket&apos;s allowlisted records
-            (read-only) and drafting a verdict for human review. Hard limits: ≤ 12 tool calls,
-            ≤ 20 s. This shows real progress only; nothing is simulated.
+            Gathering this ticket&apos;s allowlisted records (read-only) and drafting a verdict.
+            Real progress only — hard limits: ≤ 12 tool calls, ≤ 20 s.
           </p>
         </div>
       )}
 
-      {!investigation && !running && !ticket && (
-        <p className="muted">Select a ticket, then run an investigation to see the evidence behind a diagnosis.</p>
-      )}
-      {!investigation && !running && ticket && (
+      {!investigation && !running && ticket && !readOnly && (
         <p className="muted">
-          No investigation has been run for this ticket yet. Running one gathers only this
-          ticket&apos;s allowlisted records (read-only) and produces an advisory draft for human
-          review.
+          Run an investigation to gather this ticket&apos;s records (read-only) and draft a verdict
+          for your review.
+        </p>
+      )}
+      {!investigation && !running && ticket && readOnly && (
+        <p className="muted">
+          No investigation is attached to this ticket in this demo dataset.
         </p>
       )}
 
-      {investigation && <InvestigationResult investigation={investigation} />}
+      {investigation && (
+        <InvestigationResult investigation={investigation} meta={meta} />
+      )}
 
       {investigation?.status === 'COMPLETED' && !readOnly && (
-        <section className="proposal-section" aria-label="Action proposal">
-          <h3>Action proposal</h3>
-          {proposals.length === 0 && (
-            <div className="proposal-create">
-              <p className="muted">
-                Server-side code decides whether this investigation supports an executable sandbox
-                action. Escalation-only routes (exposure, ambiguous double charge) never produce one.
-              </p>
-              <button type="button" className="btn btn--secondary" onClick={handleCreateProposal}>
-                Derive action proposal
-              </button>
-              {escalationOnlyHint && (
-                <p className="callout callout--warning" role="status">
-                  {escalationOnlyHint}
-                </p>
-              )}
-            </div>
-          )}
-          {proposals.map((proposal) => (
-            <ProposalCard
-              key={proposal.id}
-              proposal={proposal}
+        <>
+          {escalationOnly ? (
+            <EscalationPrimary
+              onEscalate={onEscalate}
+              escalations={escalations}
+              routeLabel={
+                NEXT_STEP_LABELS[route!] ?? route!
+              }
+            />
+          ) : (
+            <ProposalSection
+              proposals={proposals}
               isMock={investigation.isMock}
-              reviewer={reviewer}
-              passcode={passcode}
-              onReviewer={setReviewer}
-              onPasscode={setPasscode}
+              escalations={escalations}
+              onCreateProposal={onCreateProposal}
               onDecide={onDecide}
-              onFeedback={setDecisionFeedback}
+              onEscalate={onEscalate}
               authConfigured={meta?.reviewerAuthConfigured === true}
             />
-          ))}
-        </section>
-      )}
-
-      {decisionFeedback && (
-        <p className="callout callout--success" role="status">
-          {decisionFeedback}
-        </p>
-      )}
-
-      {!readOnly && ticket && (
-        <EscalationSection
-          onEscalate={onEscalate}
-          escalations={escalations}
-          reviewer={reviewer}
-          passcode={passcode}
-          onReviewer={setReviewer}
-          onPasscode={setPasscode}
-        />
+          )}
+        </>
       )}
     </aside>
   );
 }
 
-function InvestigationResult({ investigation }: { investigation: InvestigationView }) {
-  const [traceOpen, setTraceOpen] = useState(false);
+/* --------------------------------------------------------------- result */
+
+function InvestigationResult({
+  investigation,
+  meta,
+}: {
+  investigation: InvestigationView;
+  meta: MetaView | null;
+}) {
   const failed = investigation.status === 'FAILED';
+  const keyReasons = investigation.supportingEvidence
+    .filter((c) => c.note)
+    .slice(0, 3);
 
   return (
-    <article className="investigation-result" aria-live="polite">
-      <div className="investigation-result__meta">
-        <span className={`badge ${failed ? 'badge--status-open' : 'badge--status-resolved'}`}>
-          {failed ? 'Failed' : 'Completed'}
-        </span>
+    <article className="result" aria-live="polite">
+      <div className="result__labels">
         {investigation.isMock ? (
-          <span className="badge badge--mock" title="Deterministic mock rules produced this result — no AI model was called.">
+          <span className="tag tag--mock" title="Deterministic rules over the seeded records — no AI model was called.">
             MOCK · no AI model called
           </span>
         ) : (
-          <span className="badge badge--real" title="A real model call produced this result.">
+          <span className="tag tag--real" title="A real model call produced this result.">
             REAL MODEL · {investigation.provider} / {investigation.model}
           </span>
         )}
-        <span className="muted">
-          {formatDateTime(investigation.createdAt)} UTC · {investigation.bounds.toolCallsUsed} tool
-          calls · {investigation.bounds.elapsedMs} ms
+        {failed && <span className="tag tag--fail">Failed</span>}
+        <span className="muted result__meta">
+          {formatDateTime(investigation.createdAt)} UTC
         </span>
       </div>
 
-      {failed && (
+      {failed ? (
         <p className="callout callout--warning" role="alert">
           The investigation failed safely (<code>{investigation.failureReason}</code>). Nothing was
           changed anywhere; you can re-run it.
         </p>
-      )}
-
-      {!failed && (
+      ) : (
         <>
-          {investigation.policyOverrides.length > 0 && (
-            <ul className="policy-overrides">
-              {investigation.policyOverrides.map((override) => (
-                <li key={override}>
-                  <strong>Policy override:</strong> {override}
-                </li>
-              ))}
-            </ul>
-          )}
+          <p className="result__verdict">{investigation.diagnosis}</p>
 
-          <p className="investigation-result__diagnosis">{investigation.diagnosis}</p>
-
-          <div className="investigation-result__flags">
-            {investigation.riskCategory && (
-              <span className={`badge badge--risk-${investigation.riskCategory.toLowerCase()}`}>
-                Risk: {RISK_LABELS[investigation.riskCategory] ?? investigation.riskCategory}
-              </span>
-            )}
+          <dl className="result__facts">
             {investigation.uncertainty && (
-              <span className={`badge badge--uncertainty-${investigation.uncertainty.toLowerCase()}`}>
-                Uncertainty: {UNCERTAINTY_LABELS[investigation.uncertainty] ?? investigation.uncertainty}
-              </span>
+              <div>
+                <dt>Uncertainty</dt>
+                <dd>{uncertaintyLabel(investigation.uncertainty)}</dd>
+              </div>
             )}
-            {investigation.proposedNextStep && (
-              <span className="badge badge--route">
-                Route: {NEXT_STEP_LABELS[investigation.proposedNextStep.type] ?? investigation.proposedNextStep.type}
-              </span>
+            {investigation.riskCategory && (
+              <div>
+                <dt>Risk</dt>
+                <dd>
+                  <span className={`risk risk--${investigation.riskCategory.toLowerCase()}`}>
+                    {riskLabel(investigation.riskCategory)}
+                  </span>
+                </dd>
+              </div>
             )}
-          </div>
+          </dl>
+
+          {keyReasons.length > 0 && (
+            <div className="result__reasons">
+              <h3 className="result__subhead">Key reasons</h3>
+              <ul>
+                {keyReasons.map((c) => (
+                  <li key={`${c.recordType}:${c.id}`}>{c.note}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {investigation.proposedNextStep && (
-            <p className="investigation-result__step">
-              <strong>Proposed next step:</strong> {investigation.proposedNextStep.detail}
-            </p>
+            <div className="next-step">
+              <h3 className="result__subhead">Next step</h3>
+              <p className="next-step__route">
+                {NEXT_STEP_LABELS[investigation.proposedNextStep.type] ??
+                  investigation.proposedNextStep.type}
+              </p>
+              <p className="next-step__detail">{investigation.proposedNextStep.detail}</p>
+            </div>
           )}
 
-          <CitationList title="Supporting evidence" citations={investigation.supportingEvidence} tone="supporting" />
-          <CitationList
-            title="Contradicting evidence"
-            citations={investigation.contradictingEvidence}
-            tone="contradicting"
-          />
+          <div className="result__draft">
+            <h3 className="result__subhead">Draft reply for your review</h3>
+            <blockquote className="draft">{investigation.draftReply}</blockquote>
+            <p className="muted result__note">Nothing has been sent to anyone.</p>
+          </div>
 
-          <section className="draft-reply-block" aria-label="Draft reply">
-            <h4>Draft reply for human review</h4>
-            <blockquote className="draft-reply">{investigation.draftReply}</blockquote>
-            <p className="muted draft-reply__note">
-              Nothing has been sent to anyone. This draft becomes the reviewer&apos;s starting point.
-            </p>
-          </section>
-
-          <Expander
-            open={traceOpen}
-            onToggle={() => setTraceOpen((v) => !v)}
-            label={`Tool trace (${investigation.toolTrace.length} calls, redacted)`}
-          >
-            <div className="table-scroll">
-              <table className="record-table record-table--compact">
-                <thead>
-                  <tr>
-                    <th scope="col">#</th>
-                    <th scope="col">Tool</th>
-                    <th scope="col">Args</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Rows</th>
-                    <th scope="col">Duration</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {investigation.toolTrace.map((entry) => (
-                    <tr key={entry.seq}>
-                      <td>{entry.seq}</td>
-                      <td>
-                        <code>{entry.tool}</code>
-                      </td>
-                      <td>{entry.argKeys.length > 0 ? entry.argKeys.join(', ') : 'none'}</td>
-                      <td>
-                        {entry.status === 'ok' ? (
-                          <span className="pill pill--ok">ok</span>
-                        ) : (
-                          <span className="pill pill--rejected" title={entry.reason}>
-                            rejected
-                          </span>
-                        )}
-                      </td>
-                      <td>{entry.rowCount ?? '—'}</td>
-                      <td>{entry.durationMs ?? 0} ms</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Expander>
-
-          <p className="muted investigation-disclaimer">
-            The investigation read only this ticket&apos;s allowlisted records. It cannot issue
-            refunds, change accounts, or contact anyone — approvals below are the only path to a
-            change, and only on this sandbox dataset.
-          </p>
+          <TechnicalDetails investigation={investigation} />
         </>
       )}
     </article>
   );
 }
 
-function CitationList({
-  title,
-  citations,
-  tone,
-}: {
-  title: string;
-  citations: EvidenceCitation[];
-  tone: 'supporting' | 'contradicting';
-}) {
-  const [open, setOpen] = useState(true);
+/* --------------------------------------------------- technical details */
+
+function TechnicalDetails({ investigation }: { investigation: InvestigationView }) {
   return (
-    <div className={`citation-list citation-list--${tone}`}>
-      <button
-        type="button"
-        className="expander__trigger"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="expander__chevron" aria-hidden="true">
-          {open ? '▾' : '▸'}
-        </span>
-        {title} ({citations.length})
-      </button>
-      <div className={`expander__content ${open ? 'expander__content--open' : ''}`}>
-        {citations.length === 0 ? (
-          <p className="muted citation-empty">none recorded</p>
-        ) : (
-          <ul>
-            {citations.map((c) => (
-              <li key={`${c.recordType}:${c.id}`}>
-                <span className="citation-chip">
-                  <code>
-                    {c.recordType.toLowerCase()}:{c.id.slice(0, 10)}…
-                  </code>
-                  {c.note && <span className="citation-note">{c.note}</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
+    <Expander label="Technical details" startOpen={false}>
+      <div className="tech">
+        <p className="muted tech__line">
+          Provider <code>{investigation.provider}</code> · model <code>{investigation.model}</code>{' '}
+          · {investigation.bounds.toolCallsUsed} tool calls · {investigation.bounds.elapsedMs} ms ·
+          output retries {investigation.bounds.outputRetries}
+        </p>
+
+        {investigation.policyOverrides.length > 0 && (
+          <div>
+            <h4>Policy overrides applied server-side</h4>
+            <ul className="tech__list">
+              {investigation.policyOverrides.map((override) => (
+                <li key={override}>{override}</li>
+              ))}
+            </ul>
+          </div>
         )}
+
+        <h4>All cited evidence</h4>
+        <CitationList title="Supporting" citations={investigation.supportingEvidence} />
+        <CitationList title="Contradicting" citations={investigation.contradictingEvidence} />
+
+        <h4>Tool trace ({investigation.toolTrace.length} calls, redacted)</h4>
+        <div className="table-scroll">
+          <table className="record-table record-table--compact">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Tool</th>
+                <th scope="col">Args</th>
+                <th scope="col">Status</th>
+                <th scope="col">Rows</th>
+                <th scope="col">ms</th>
+              </tr>
+            </thead>
+            <tbody>
+              {investigation.toolTrace.map((entry) => (
+                <tr key={entry.seq}>
+                  <td>{entry.seq}</td>
+                  <td>
+                    <code>{entry.tool}</code>
+                  </td>
+                  <td>{entry.argKeys.length > 0 ? entry.argKeys.join(', ') : 'none'}</td>
+                  <td>
+                    {entry.status === 'ok' ? (
+                      `ok (${entry.rowCount ?? 0})`
+                    ) : (
+                      <span title={entry.reason}>rejected — {entry.reason}</span>
+                    )}
+                  </td>
+                  <td>{entry.rowCount ?? '—'}</td>
+                  <td>{entry.durationMs ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="muted tech__line">
+          The investigation read only this ticket&apos;s allowlisted records. It cannot issue
+          refunds, change accounts, or contact anyone.
+        </p>
       </div>
+    </Expander>
+  );
+}
+
+function CitationList({ title, citations }: { title: string; citations: EvidenceCitation[] }) {
+  return (
+    <div className="citations">
+      <strong>{title}</strong>
+      {citations.length === 0 ? (
+        <p className="muted">none</p>
+      ) : (
+        <ul>
+          {citations.map((c) => (
+            <li key={`${c.recordType}:${c.id}`}>
+              <code>
+                {c.recordType.toLowerCase()}:{c.id.slice(0, 10)}…
+              </code>
+              {c.note && <span className="muted"> — {c.note}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
-function Expander({
-  open,
-  onToggle,
-  label,
-  children,
+/* ------------------------------------------------------------- actions */
+
+function ProposalSection({
+  proposals,
+  isMock,
+  escalations,
+  onCreateProposal,
+  onDecide,
+  onEscalate,
+  authConfigured,
 }: {
-  open: boolean;
-  onToggle: () => void;
-  label: string;
-  children: React.ReactNode;
+  proposals: ProposalView[];
+  isMock: boolean;
+  escalations: TicketEscalationView[];
+  onCreateProposal: CreateProposalFn;
+  onDecide: DecideFn;
+  onEscalate: EscalateFn;
+  authConfigured: boolean;
 }) {
+  const [reviewer, setReviewer] = useState('');
+  const [passcode, setPasscode] = useState('');
+  const [hint, setHint] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    setHint(null);
+    const result = await onCreateProposal();
+    if (result?.errorCode) {
+      setHint(PROPOSAL_ERROR_HINTS[result.errorCode] ?? result.message ?? 'The proposal was refused.');
+    }
+  };
+
   return (
-    <div className="expander">
-      <button type="button" className="expander__trigger" aria-expanded={open} onClick={onToggle}>
-        <span className="expander__chevron" aria-hidden="true">
-          {open ? '▾' : '▸'}
-        </span>
-        {label}
-      </button>
-      <div className={`expander__content ${open ? 'expander__content--open' : ''}`}>
-        <div className="expander__inner">{children}</div>
-      </div>
-    </div>
+    <section className="actions" aria-label="Action proposal and decision">
+      <h2 className="section-title">Proposed action</h2>
+
+      {feedback && (
+        <p className="callout callout--success" role="status">
+          {feedback}
+        </p>
+      )}
+
+      {proposals.length === 0 && (
+        <div className="actions__create">
+          <p className="muted">
+            If the records support it, server-side code derives a bounded sandbox action from this
+            investigation — the model cannot create one.
+          </p>
+          <button type="button" className="btn btn--primary" onClick={handleCreate}>
+            Derive action proposal
+          </button>
+          {hint && (
+            <p className="callout callout--warning" role="status">
+              {hint}
+            </p>
+          )}
+        </div>
+      )}
+
+      {proposals.map((proposal) => (
+        <ProposalCard
+          key={proposal.id}
+          proposal={proposal}
+          isMock={isMock}
+          reviewer={reviewer}
+          passcode={passcode}
+          onReviewer={setReviewer}
+          onPasscode={setPasscode}
+          onDecide={onDecide}
+          onFeedback={setFeedback}
+          authConfigured={authConfigured}
+        />
+      ))}
+
+      <Expander label="Escalate to a human team instead" startOpen={false}>
+        <EscalationForm onEscalate={onEscalate} reviewer={reviewer} passcode={passcode} onReviewer={setReviewer} onPasscode={setPasscode} />
+        <EscalationHistory escalations={escalations} />
+      </Expander>
+    </section>
   );
 }
 
@@ -462,11 +467,10 @@ function ProposalCard({
     setError(null);
     const result = await onDecide(proposal.id, decision, reviewer, passcode);
     if (result.ok) {
-      const status = decision === 'APPROVE' ? 'APPLIED' : decision === 'REJECT' ? 'REJECTED' : 'ESCALATED';
       onFeedback(
         decision === 'APPROVE'
-          ? 'Approved and applied to the sandbox dataset. Ticket resolved — see the updated records in the center panel.'
-          : `Proposal ${status.toLowerCase()}. No data was changed.`,
+          ? 'Approved and applied to the sandbox dataset. Ticket resolved — the center panel shows the updated records.'
+          : `Proposal ${decision === 'REJECT' ? 'rejected' : 'escalated'}. No data was changed.`,
       );
       onPasscode('');
     } else {
@@ -476,40 +480,29 @@ function ProposalCard({
   };
 
   const pending = proposal.status === 'PROPOSED';
-  const targets = describeTargets(proposal);
 
   return (
-    <article className={`proposal-card proposal-card--${proposal.status.toLowerCase()}`}>
-      <header className="proposal-card__head">
-        <span className="badge badge--action">{ACTION_TYPE_LABELS[proposal.actionType] ?? proposal.actionType}</span>
-        <span className={`badge badge--proposal-${proposal.status.toLowerCase()}`}>
+    <article className={`proposal proposal--${proposal.status.toLowerCase()}`}>
+      <header className="proposal__head">
+        <span className="proposal__title">{ACTION_TYPE_LABELS[proposal.actionType] ?? proposal.actionType}</span>
+        <span className={`tag tag--proposal-${proposal.status.toLowerCase()}`}>
           {PROPOSAL_STATUS_LABELS[proposal.status] ?? proposal.status}
         </span>
       </header>
 
-      {isMock && (
-        <p className="muted proposal-card__mocknote">
-          Derived from a <strong>MOCK</strong> investigation — deterministic rules, no AI model was
-          called.
-        </p>
-      )}
+      {isMock && <p className="muted proposal__note">Derived from a MOCK investigation.</p>}
+      <p className="proposal__rationale">{proposal.rationale}</p>
 
-      <p className="proposal-card__rationale">{proposal.rationale}</p>
-
-      <dl className="proposal-card__facts">
+      <dl className="proposal__facts">
         <div>
           <dt>Targets</dt>
-          <dd>{targets}</dd>
+          <dd>{describeTargets(proposal)}</dd>
         </div>
         <div>
           <dt>Policy</dt>
           <dd>
-            <code>{proposal.policyKey}</code> @ {formatDateTime(proposal.policyVersion)} UTC
+            <code>{proposal.policyKey}</code> · pinned {formatDateTime(proposal.policyVersion)} UTC
           </dd>
-        </div>
-        <div>
-          <dt>Version-pinned records</dt>
-          <dd>{Object.keys(proposal.recordVersions).length} (drift invalidates approval)</dd>
         </div>
         <div>
           <dt>Expires</dt>
@@ -527,14 +520,14 @@ function ProposalCard({
           <div>
             <dt>Last failure</dt>
             <dd>
-              <code>{proposal.applyError}</code> (rolled back; attempt {proposal.failureCount})
+              <code>{proposal.applyError}</code> — rolled back (attempt {proposal.failureCount})
             </dd>
           </div>
         )}
       </dl>
 
       {pending && (
-        <div className="decision-controls">
+        <div className="decision">
           <label className="field">
             <span>Reviewer name</span>
             <input
@@ -553,10 +546,10 @@ function ProposalCard({
               value={passcode}
               onChange={(e) => onPasscode(e.target.value)}
               autoComplete="off"
-              placeholder="from REVIEWER_PASSCODE"
+              placeholder="REVIEWER_PASSCODE"
             />
           </label>
-          <div className="decision-controls__buttons">
+          <div className="decision__buttons">
             <button type="button" className="btn btn--approve" disabled={busy} onClick={() => decide('APPROVE')}>
               {busy ? 'Working…' : DECISION_LABELS.APPROVE}
             </button>
@@ -567,14 +560,14 @@ function ProposalCard({
               {DECISION_LABELS.ESCALATE}
             </button>
           </div>
-          <p className="muted decision-controls__note">
+          <p className="muted decision__note">
             Approving re-validates expiry, record versions, policy version, and account ownership
-            inside one database transaction before applying. Only entitlement repair and
-            duplicate-invoice correction exist — nothing else can ever be applied.
+            in one database transaction before applying. Only entitlement repair and
+            duplicate-invoice correction exist.
           </p>
           {!authConfigured && (
-            <p className="muted decision-controls__note">
-              Reviewer auth is not configured on the API, so decisions will currently be refused.
+            <p className="muted decision__note">
+              Reviewer auth is not configured on the API — decisions will currently be refused.
             </p>
           )}
         </div>
@@ -586,79 +579,93 @@ function ProposalCard({
         </p>
       )}
 
-      <div className="expander">
-        <button
-          type="button"
-          className="expander__trigger"
-          aria-expanded={auditsOpen}
-          onClick={loadAudits}
-        >
-          <span className="expander__chevron" aria-hidden="true">
-            {auditsOpen ? '▾' : '▸'}
-          </span>
-          Audit history
-        </button>
-        <div className={`expander__content ${auditsOpen ? 'expander__content--open' : ''}`}>
-          <div className="expander__inner">
-            {audits === null && <p className="muted">Loading audit trail…</p>}
-            {audits !== null && audits.length === 0 && <p className="muted">No audit entries.</p>}
-            {audits !== null && audits.length > 0 && (
-              <ol className="audit-timeline">
-                {audits.map((audit) => (
-                  <li key={audit.id} className={`audit-timeline__item audit-timeline__item--${audit.event.toLowerCase()}`}>
-                    <span className="audit-timeline__dot" aria-hidden="true" />
-                    <div>
-                      <strong>{AUDIT_EVENT_LABELS[audit.event] ?? audit.event}</strong>
-                      {audit.actor && <span className="muted"> · {audit.actor}</span>}
-                      <span className="muted"> · {formatDateTime(audit.createdAt)} UTC</span>
-                      {audit.detail?.before !== undefined && audit.detail?.after !== undefined && (
-                        <pre className="audit-diff">
-                          {`before ${JSON.stringify(audit.detail.before)}\nafter  ${JSON.stringify(audit.detail.after)}`}
-                        </pre>
-                      )}
-                      {typeof audit.detail?.reason === 'string' && (
-                        <p className="muted">Reason: {audit.detail.reason}</p>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        </div>
-      </div>
+      <Expander label="Audit history" startOpen={false} onToggle={loadAudits}>
+        {audits === null && <p className="muted">Loading audit trail…</p>}
+        {audits !== null && audits.length === 0 && <p className="muted">No audit entries.</p>}
+        {audits !== null && audits.length > 0 && (
+          <ol className="audit">
+            {audits.map((audit) => (
+              <li key={audit.id} className={`audit__item audit__item--${audit.event.toLowerCase()}`}>
+                <span className="audit__dot" aria-hidden="true" />
+                <div>
+                  <strong>{AUDIT_EVENT_LABELS[audit.event] ?? audit.event}</strong>
+                  {audit.actor && <span className="muted"> · {audit.actor}</span>}
+                  <span className="muted"> · {formatDateTime(audit.createdAt)} UTC</span>
+                  {audit.detail?.before !== undefined && audit.detail?.after !== undefined && (
+                    <pre className="audit__diff">
+                      {`before ${JSON.stringify(audit.detail.before)}\nafter  ${JSON.stringify(audit.detail.after)}`}
+                    </pre>
+                  )}
+                  {typeof audit.detail?.reason === 'string' && (
+                    <p className="muted">Reason: {audit.detail.reason}</p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Expander>
     </article>
   );
 }
 
-function EscalationSection({
+/* ---------------------------------------------------------- escalation */
+
+function EscalationPrimary({
   onEscalate,
   escalations,
+  routeLabel,
+}: {
+  onEscalate: EscalateFn;
+  escalations: TicketEscalationView[];
+  routeLabel: string;
+}) {
+  return (
+    <section className="actions actions--escalation" aria-label="Escalation">
+      <h2 className="section-title">Next step</h2>
+      <p className="actions__lede">
+        This route has <strong>no sandbox action</strong>: {routeLabel} is the only permitted
+        outcome, and escalation never changes account data.
+      </p>
+      <EscalationForm onEscalate={onEscalate} />
+      <EscalationHistory escalations={escalations} />
+    </section>
+  );
+}
+
+function EscalationForm({
+  onEscalate,
   reviewer,
   passcode,
   onReviewer,
   onPasscode,
 }: {
   onEscalate: EscalateFn;
-  escalations: TicketEscalationView[];
-  reviewer: string;
-  passcode: string;
-  onReviewer: (value: string) => void;
-  onPasscode: (value: string) => void;
+  reviewer?: string;
+  passcode?: string;
+  onReviewer?: (value: string) => void;
+  onPasscode?: (value: string) => void;
 }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [name, setName] = useState(reviewer ?? '');
+  const [code, setCode] = useState(passcode ?? '');
+
+  // Share identity state with proposal decisions when the parent controls it.
+  const reviewerValue = onReviewer ? (reviewer ?? '') : name;
+  const passcodeValue = onPasscode ? (passcode ?? '') : code;
 
   const escalate = async () => {
     setBusy(true);
     setError(null);
-    const result = await onEscalate(reviewer, passcode, note || undefined);
+    const result = await onEscalate(reviewerValue, passcodeValue, note || undefined);
     if (result.ok) {
       setDone(true);
       setNote('');
-      onPasscode('');
+      onPasscode?.('');
+      setCode('');
     } else {
       setError(result.message ?? 'Escalation failed.');
     }
@@ -666,19 +673,14 @@ function EscalationSection({
   };
 
   return (
-    <section className="escalation-section" aria-label="Escalation">
-      <h3>Escalation</h3>
-      <p className="muted">
-        Escalation hands the ticket to a human team. It never changes account data — it is the
-        required route for exposure reports and ambiguous double charges.
-      </p>
+    <div className="escalation-form">
       <label className="field">
         <span>Reviewer name</span>
         <input
           type="text"
-          value={reviewer}
+          value={reviewerValue}
           maxLength={80}
-          onChange={(e) => onReviewer(e.target.value)}
+          onChange={(e) => (onReviewer ? onReviewer(e.target.value) : setName(e.target.value))}
           autoComplete="off"
           placeholder="e.g. Dana Support"
         />
@@ -687,10 +689,10 @@ function EscalationSection({
         <span>Reviewer passcode</span>
         <input
           type="password"
-          value={passcode}
-          onChange={(e) => onPasscode(e.target.value)}
+          value={passcodeValue}
+          onChange={(e) => (onPasscode ? onPasscode(e.target.value) : setCode(e.target.value))}
           autoComplete="off"
-          placeholder="from REVIEWER_PASSCODE"
+          placeholder="REVIEWER_PASSCODE"
         />
       </label>
       <label className="field">
@@ -712,29 +714,55 @@ function EscalationSection({
           {error}
         </p>
       )}
-      {escalations.length > 0 && (
-        <ul className="escalation-history">
-          {escalations.map((e) => (
-            <li key={e.id}>
-              <strong>{e.escalatedBy}</strong>
-              {e.note && <span> — {e.note}</span>}
-              <span className="muted"> · {formatDateTime(e.createdAt)} UTC</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    </div>
   );
 }
+
+function EscalationHistory({ escalations }: { escalations: TicketEscalationView[] }) {
+  if (escalations.length === 0) return null;
+  return (
+    <ul className="escalation-history">
+      {escalations.map((e) => (
+        <li key={e.id}>
+          <strong>{e.escalatedBy}</strong>
+          {e.note && <span> — {e.note}</span>}
+          <span className="muted"> · {formatDateTime(e.createdAt)} UTC</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/* -------------------------------------------------------------- helpers */
 
 function describeTargets(proposal: ProposalView): string {
   const p = proposal.payload;
   if (proposal.actionType === 'ENTITLEMENT_REPAIR') {
-    return `subscription ${short(p.subscriptionId)} → set ACTIVE for the paid period (charge ${short(p.paymentId)}, invoice ${short(p.invoiceId)})`;
+    return `subscription ${short(p.subscriptionId)} → ACTIVE for the paid period (charge ${short(p.paymentId)}, invoice ${short(p.invoiceId)})`;
   }
   return `void duplicate invoice ${short(p.duplicateInvoiceId)}; keep ${short(p.canonicalInvoiceId)} and charge ${short(p.paymentId)}`;
 }
 
 function short(id: string | undefined): string {
   return id ? id.slice(0, 8) + '…' : '—';
+}
+
+function uncertaintyLabel(value: string): string {
+  const map: Record<string, string> = {
+    CONFIRMED: 'Confirmed from records',
+    LIKELY: 'Likely',
+    UNCERTAIN: 'Uncertain',
+    UNRESOLVABLE: 'Not determinable from records',
+  };
+  return map[value] ?? value;
+}
+
+function riskLabel(value: string): string {
+  const map: Record<string, string> = {
+    LOW: 'Low',
+    MEDIUM: 'Medium',
+    HIGH: 'High',
+    URGENT: 'Urgent — escalate',
+  };
+  return map[value] ?? value;
 }

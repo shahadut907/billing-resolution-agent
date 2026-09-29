@@ -53,10 +53,10 @@ export const RISK_LABELS: Record<string, string> = {
 };
 
 export const UNCERTAINTY_LABELS: Record<string, string> = {
-  CONFIRMED: 'Confirmed by records',
+  CONFIRMED: 'Confirmed from records',
   LIKELY: 'Likely',
   UNCERTAIN: 'Uncertain',
-  UNRESOLVABLE: 'Unresolvable from records',
+  UNRESOLVABLE: 'Not determinable from records',
 };
 
 export const NEXT_STEP_LABELS: Record<string, string> = {

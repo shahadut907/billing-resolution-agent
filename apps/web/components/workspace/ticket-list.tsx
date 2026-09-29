@@ -1,8 +1,8 @@
 'use client';
 
 import type { TicketSummary } from '@billing-resolution/types';
-import { PRIORITY_LABELS, SCENARIO_LABELS, TICKET_STATUS_LABELS } from '../../lib/labels';
-import { formatDateTime } from '../../lib/format';
+import { SCENARIO_LABELS, TICKET_STATUS_LABELS } from '../../lib/labels';
+import { formatDate } from '../../lib/format';
 
 export function TicketList({
   tickets,
@@ -16,18 +16,16 @@ export function TicketList({
   onRetry: () => void;
 }) {
   return (
-    <nav className="panel glass ticket-list" aria-label="Support tickets">
+    <nav className="ticket-list" aria-label="Support tickets">
       <header className="ticket-list__head">
         <h2>Tickets</h2>
-        <span className="ticket-list__count muted" aria-hidden="true">
-          {tickets ? tickets.length : '…'}
-        </span>
+        <span className="ticket-list__count muted">{tickets ? tickets.length : '…'}</span>
       </header>
 
       {tickets === null && (
         <div className="empty-state" role="status">
           <span className="spinner" aria-hidden="true" />
-          Loading tickets…
+          Loading…
         </div>
       )}
 
@@ -48,25 +46,20 @@ export function TicketList({
               <li key={ticket.id}>
                 <button
                   type="button"
-                  className={`ticket-item${selected ? ' ticket-item--selected' : ''}`}
+                  className={`ticket-row${selected ? ' ticket-row--selected' : ''}`}
                   aria-current={selected ? 'true' : undefined}
                   onClick={() => onSelect(ticket.id)}
                 >
-                  <span className="ticket-item__top">
-                    <span className="ticket-item__ref">{ticket.reference}</span>
-                    <span className={`badge badge--status-${ticket.status.toLowerCase()}`}>
+                  <span className="ticket-row__top">
+                    <span className="ticket-row__ref">{ticket.reference}</span>
+                    <span className={`status-dot status-dot--${ticket.status.toLowerCase()}`}>
                       {TICKET_STATUS_LABELS[ticket.status] ?? ticket.status}
                     </span>
                   </span>
-                  <span className="ticket-item__title">{ticket.title}</span>
-                  <span className="ticket-item__bottom">
-                    <span className={`badge badge--scenario-${ticket.scenario.toLowerCase().replace(/_/g, '-')}`}>
-                      {SCENARIO_LABELS[ticket.scenario] ?? ticket.scenario}
-                    </span>
-                    <span className="muted">
-                      {ticket.account.name} · {PRIORITY_LABELS[ticket.priority] ?? ticket.priority} ·{' '}
-                      {formatDateTime(ticket.createdAt)}
-                    </span>
+                  <span className="ticket-row__title">{ticket.title}</span>
+                  <span className="ticket-row__meta">
+                    {SCENARIO_LABELS[ticket.scenario] ?? ticket.scenario} ·{' '}
+                    {formatDate(ticket.createdAt)}
                   </span>
                 </button>
               </li>
